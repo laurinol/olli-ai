@@ -1,0 +1,89 @@
+package pro.olli.storage.impl;
+
+import com.microsoft.graph.httpcore.AuthenticationProvider;
+import com.microsoft.graph.models.DriveItem;
+import com.microsoft.graph.serviceclient.GraphServiceClient;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import org.jboss.logging.Logger;
+import pro.olli.model.StorageCredentials;
+import pro.olli.storage.StorageProvider;
+
+import java.io.InputStream;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * OneDrive implementation of StorageProvider.
+ */
+@ApplicationScoped
+public class OneDriveProvider implements StorageProvider {
+
+    private static final Logger LOG = Logger.getLogger(OneDriveProvider.class);
+
+    private GraphServiceClient graphClient;
+
+    public OneDriveProvider() {
+        // Placeholder - real client set via authenticate
+        this.graphClient = null;
+    }
+
+    @Override
+    public Uni<Boolean> authenticate(StorageCredentials credentials) {
+        return Uni.createFrom().emitter(emitter -> {
+            try {
+                String accessToken = (String) credentials.get("accessToken");
+                AuthenticationProvider authProvider = request -> {
+                    request.addHeader("Authorization", "Bearer " + accessToken);
+                    return request;
+                };
+                this.graphClient = GraphServiceClient.builder()
+                    .authenticationProvider(authProvider)
+                    .buildClient();
+                // Test authentication
+                graphClient.me().drive().root().get();
+                emitter.complete(true);
+            } catch (Exception e) {
+                LOG.errorf("OneDrive authentication failed: %s", e.getMessage());
+                emitter.complete(false);
+            }
+        });
+    }
+
+    @Override
+    public Uni<List<String>> listFiles(String directory) {
+        return Uni.createFrom().emitter(emitter -> {
+            try {
+                List<DriveItem> items = graphClient.me().drive().items(directory).children()
+                    .get()
+                    .getValue();
+                List<String> itemIds = items.stream()
+                    .map(item -> item.id)
+                    .collect(Collectors.toList());
+                emitter.complete(itemIds);
+            } catch (Exception e) {
+                LOG.errorf("Failed to list OneDrive files: %s", e.getMessage());
+                emitter.fail(e);
+            }
+        });
+    }
+
+    @Override
+    public Uni<InputStream> downloadFile(String filePath) {
+        return Uni.createFrom().emitter(emitter -> {
+            try {
+                InputStream stream = graphClient.me().drive().items(filePath).content()
+                    .get();
+                emitter.complete(stream);
+            } catch (Exception e) {
+                LOG.errorf("Failed to download OneDrive file %s: %s", filePath, e.getMessage());
+                emitter.fail(e);
+            }
+        });
+    }
+
+    @Override
+    public StorageProviderType getProviderType() {
+        return StorageProviderType.ONEDRIVE;
+    }
+}
