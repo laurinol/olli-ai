@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import pro.olli.storage.StorageFactory;
 import pro.olli.storage.StorageProvider;
@@ -37,6 +38,11 @@ public class SyncService {
     private final StorageFactory storageFactory;
     private final CloudTasksClient cloudTasksClient;
     private final Gson gson;
+
+    @ConfigProperty(name = "quarkus.google.cloud.project-id", defaultValue = "olli-ai")
+    String projectId;
+    @ConfigProperty(name = "quarkus.google.cloud.location", defaultValue = "us-west1")
+    String location;
 
     public SyncService(Firestore firestore, StorageFactory storageFactory, CloudTasksClient cloudTasksClient) {
         this.firestore = firestore;
@@ -91,8 +97,6 @@ public class SyncService {
 
     private Uni<Void> enqueueSyncTask(String taskId, Map<String, String> taskData) {
         return Uni.createFrom().emitter(emitter -> {
-            String projectId = "olli-ai-2025"; // Replace with your GCP project ID
-            String location = "us-central1";   // Adjust as needed
             String queue = "sync-queue";       // Configure in GCP
 
             QueueName queueName = QueueName.of(projectId, location, queue);

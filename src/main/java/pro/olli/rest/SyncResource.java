@@ -4,6 +4,7 @@
 package pro.olli.rest;
 
 import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -33,6 +34,15 @@ public class SyncResource {
         this.syncService = syncService;
     }
 
+    /**
+     * REST endpoint for synchronizing files across storage providers
+     *
+     * @param source     Source storage provider
+     * @param folderId   Folder ID to sync
+     * @param businessId Business ID
+     * @param ctx        Security context
+     * @return Response with task ID
+     */
     @GET
     @Path("/sync/{source}")
     @Produces(MediaType.APPLICATION_JSON)
