@@ -1,6 +1,8 @@
+/*
+ * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
+ */
 package pro.olli.rest;
 
-import io.quarkus.security.Authenticated;
 import io.smallrye.mutiny.Uni;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -12,6 +14,8 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
 import java.util.Map;
+import java.util.UUID;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import pro.olli.service.SyncService;
 
@@ -22,37 +26,56 @@ public class SyncResource {
 
     private final SyncService syncService;
 
+    @ConfigProperty(name = "quarkus.oidc.enabled", defaultValue = "true")
+    boolean oidcEnabled;
+
     public SyncResource(SyncService syncService) {
         this.syncService = syncService;
     }
 
-    /**
-     * REST endpoint for syncing a folder.
-     * @param source
-     * @param folderId
-     * @param ctx
-     * @return An HTTP response indicating success or failure.
-     */
     @GET
     @Path("/sync/{source}")
-    @Authenticated
     @Produces(MediaType.APPLICATION_JSON)
     public Uni<Response> syncFolder(@PathParam("source") String source,
         @QueryParam("folderId") String folderId,
+        @QueryParam("businessId") String businessId,
         @Context SecurityContext ctx) {
-        LOG.debugf("Sync requested for source %s, folderId %s", source, folderId);
-        if (ctx.getUserPrincipal() == null) {
-            LOG.warnf("Unauthenticated request to /auth/sync/%s", source);
+        LOG.infof("OIDC enabled: %b, Profile: %s, Source: %s", oidcEnabled,
+            System.getProperty("quarkus.profile", "prod"), source);
+        String userId;
+        String clientId;
+        boolean isDev = "dev".equals(System.getProperty("quarkus.profile", "prod"));
+        boolean requiresAuth = oidcEnabled && !isDev && !source.equalsIgnoreCase("local");
+
+        LOG.infof("Requires auth: %b, Principal: %s", requiresAuth, ctx.getUserPrincipal());
+        if (requiresAuth && ctx.getUserPrincipal() == null) {
+            LOG.warnf("Authentication required for /auth/sync/%s", source);
             return Uni.createFrom().item(Response.status(Response.Status.UNAUTHORIZED)
                 .entity(Map.of("error", "Authentication required"))
                 .build());
         }
-        String clientId = ctx.getUserPrincipal().getName();
-        LOG.infof("Sync requested for client %s, source %s, folderId %s", clientId, source, folderId);
-        return syncService.sync(clientId, source, folderId)
+
+        if (businessId == null || businessId.isEmpty()) {
+            LOG.error("Business ID is required");
+            return Uni.createFrom().item(Response.status(Response.Status.BAD_REQUEST)
+                .entity(Map.of("error", "Business ID is required"))
+                .build());
+        }
+        clientId = businessId; // Use query param
+        userId = ctx.getUserPrincipal() != null ? ctx.getUserPrincipal().getName() :
+            System.getenv("TEST_USER_ID") != null ? System.getenv("TEST_USER_ID") : UUID.randomUUID().toString();
+
+        if (ctx.getUserPrincipal() == null) {
+            LOG.warnf("No authentication provided for /auth/sync/%s, using fallback userId %s", source, userId);
+        } else {
+            LOG.infof("Authenticated userId: %s", userId);
+        }
+
+        LOG.infof("Sync requested for client %s, user %s, source %s, folderId %s", clientId, userId, source, folderId);
+        return syncService.sync(clientId, userId, source, folderId)
             .map(taskId -> {
-                if (taskId == null) {
-                    LOG.warnf("No task ID returned for client %s, source %s", clientId, source);
+                if (taskId == null || taskId.startsWith("Failed")) {
+                    LOG.warnf("No task ID returned for client %s, user %s, source %s", clientId, userId, source);
                     return Response.status(Response.Status.NO_CONTENT)
                         .entity(Map.of("message", "No sync task created"))
                         .build();
@@ -60,15 +83,18 @@ public class SyncResource {
                 return Response.ok(Map.of("taskId", taskId, "message", "Sync queued")).build();
             })
             .onFailure().recoverWithItem(throwable -> {
-                LOG.errorf("Sync failed for client %s, source %s: %s", clientId, source, throwable.getMessage());
+                LOG.errorf("Sync failed for client %s, user %s, source %s: %s", clientId, userId, source,
+                    throwable.getMessage());
                 return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(Map.of("error", "Sync failed: " + throwable.getMessage()))
                     .build();
             });
     }
 
+
     /**
      * REST endpoint for doing a health check
+     *
      * @return "OK"
      */
     @GET

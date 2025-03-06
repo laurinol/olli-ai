@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
+ */
+
 package pro.olli.storage.impl;
 
 import com.google.api.client.http.javanet.NetHttpTransport;

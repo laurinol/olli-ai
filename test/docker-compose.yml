@@ -2,7 +2,9 @@ services:
   firestore:
     image: google/cloud-sdk:latest
     command: gcloud emulators firestore start --host-port=0.0.0.0:8081
-    ports: [ "8081:8081" ]
+    ports:
+      - "8081:8080"  # Expose the REST port as 8081
+      - "4000:4000"  # Expose the web interface port as 4000
   rabbitmq:
     image: rabbitmq:3
     ports: [ "5672:5672" ]

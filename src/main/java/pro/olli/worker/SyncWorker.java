@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
+ */
+
 package pro.olli.worker;
 
 import com.google.cloud.firestore.DocumentSnapshot;
@@ -50,20 +54,13 @@ public class SyncWorker {
                     LOG.errorf("Sync request not found: %s", task.clientId);
                     return Uni.createFrom().voidItem();
                 }
-                return Uni.createFrom().future(firestore.collection("clients").document(task.clientId).get())
-                    .onItem().transformToUni(clientDoc -> {
-                        if (!(clientDoc instanceof DocumentSnapshot) || !((DocumentSnapshot) clientDoc).exists()) {
-                            LOG.errorf("Client not found: %s", task.clientId);
+                return Uni.createFrom().future(firestore.collection("clients").document(task.clientId).collection("users").document(task.userId).get())
+                    .onItem().transformToUni(userDoc -> {
+                        if (!(userDoc instanceof DocumentSnapshot) || !((DocumentSnapshot) userDoc).exists()) {
+                            LOG.errorf("User not found: %s for client %s", task.userId, task.clientId);
                             return Uni.createFrom().voidItem();
                         }
-                        StorageCredentials creds = clientDoc.exists() ?
-                            new StorageCredentials((Map<String, Object>) clientDoc.get("token")) :
-                            new StorageCredentials(Map.of(
-                                "accessToken", System.getenv("GOOGLE_ACCESS_TOKEN"),
-                                "username", System.getenv("SFTP_USERNAME"),
-                                "host", System.getenv("SFTP_HOST"),
-                                "sshKey", System.getenv("SFTP_SSH_KEY")
-                            ));  // TODO move to unit tests
+                        StorageCredentials creds = new StorageCredentials((Map<String, Object>) userDoc.get("token"));
                         String folderId = task.folderId != null ? task.folderId : System.getenv("GOOGLE_TEST_FOLDER_ID");
                         StorageProviderType type = StorageProviderType.fromString(task.source);
                         if (type == null) {
@@ -125,13 +122,14 @@ public class SyncWorker {
     }
 
     public static class SyncTask {
-        public String clientId;
+        public String clientId; // businessId
+        public String userId;   // sub from JWT
         public String source;
         public String folderId;
 
         @Override
         public String toString() {
-            return "SyncTask{clientId='" + clientId + "', source='" + source + "', folderId='" + folderId + "'}";
+            return "SyncTask{clientId='" + clientId + "', userId='" + userId + "', source='" + source + "', folderId='" + folderId + "'}";
         }
     }
 }

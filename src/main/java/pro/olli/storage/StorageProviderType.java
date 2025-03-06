@@ -4,6 +4,8 @@ package pro.olli.storage;
  * Enum representing supported storage providers.
  */
 public enum StorageProviderType {
+    LOCAL("local"),
+    NETWORK("network"),  // Samba
     GOOGLE("google"),
     DROPBOX("dropbox"),
     //ONEDRIVE("onedrive"),

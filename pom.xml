@@ -47,6 +47,12 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-oidc</artifactId>
     </dependency>
+    <!-- Quarkus Configuration -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-arc-deployment</artifactId>
+      <version>3.8.3</version>
+    </dependency>
     <!-- Google Drive API -->
     <dependency>
       <groupId>com.google.apis</groupId>
@@ -64,6 +70,12 @@
       <groupId>com.google.cloud</groupId>
       <artifactId>google-cloud-tasks</artifactId>
       <version>2.58.0</version>
+    </dependency>
+    <!-- Google JSON support -->
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
+      <version>2.10.1</version>
     </dependency>
     <!-- Microsoft Graph API -->
     <dependency>
@@ -119,12 +131,12 @@
       <artifactId>quarkus-google-cloud-firestore</artifactId>
       <version>2.14.0</version>
     </dependency>
-    <!-- Logging -->
-    <!-- <dependency>
-      <groupId>org.apache.logging.log4j</groupId>
-      <artifactId>log4j-core</artifactId>
-      <version>2.23.1</version>
-    </dependency> -->
+    <!-- Samba support -->
+    <dependency>
+      <groupId>eu.agno3.jcifs</groupId>
+      <artifactId>jcifs-ng</artifactId>
+      <version>2.1.10</version>
+    </dependency>
   </dependencies>
 
   <build>
