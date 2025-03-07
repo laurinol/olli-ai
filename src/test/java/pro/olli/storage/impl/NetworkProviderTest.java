@@ -7,6 +7,7 @@ package pro.olli.storage.impl;
 import io.quarkus.test.junit.QuarkusTest;
 import io.smallrye.mutiny.Uni;
 import java.util.HashMap;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import jcifs.smb.SmbFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,18 @@ import static org.mockito.Mockito.*;
 
 @QuarkusTest
 class NetworkProviderTest {
+
+    @ConfigProperty(name = "samba.username", defaultValue = "testuser")
+    String userName;
+
+    @ConfigProperty(name = "samba.password", defaultValue = "")
+    String password;
+
+    @ConfigProperty(name = "samba.host", defaultValue = "localhost")
+    String host;
+
+    @ConfigProperty(name = "samba.share", defaultValue = "public")
+    String share;
 
     private NetworkProvider networkProvider;
     private SmbFile mockSmbFile;
@@ -37,10 +50,10 @@ class NetworkProviderTest {
     @Test
     void testAuthenticateSuccess() {
         StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
-            put("username", "guest");
-            put("password", "");
-            put("host", "192.168.1.100");
-            put("share", "public");
+            put("username", userName);
+            put("password", password);
+            put("host", host);
+            put("share",share);
         }});
 
         Uni<Boolean> authUni = networkProvider.authenticate(creds);
@@ -54,7 +67,7 @@ class NetworkProviderTest {
         StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
             put("username", "guest");
             put("password", "");
-            put("host", "127.08.0.1");
+            put("host", "127.0.0.1");
             put("share", "public");
         }});
         networkProvider.authenticate(creds).await().indefinitely();

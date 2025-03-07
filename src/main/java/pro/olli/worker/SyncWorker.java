@@ -48,16 +48,16 @@ public class SyncWorker {
     @Produces(MediaType.APPLICATION_JSON)
     public Uni<Void> processTask(SyncTask task) {
         LOG.infof("Processing task: %s", task);
-        return Uni.createFrom().future(firestore.collection("syncRequests").document(task.clientId).get())
+        return Uni.createFrom().future(firestore.collection("syncRequests").document(task.businessId).get())
             .onItem().transformToUni(syncDoc -> {
                 if (!(syncDoc instanceof DocumentSnapshot) || !((DocumentSnapshot) syncDoc).exists()) {
-                    LOG.errorf("Sync request not found: %s", task.clientId);
+                    LOG.errorf("Sync request not found: %s", task.businessId);
                     return Uni.createFrom().voidItem();
                 }
-                return Uni.createFrom().future(firestore.collection("clients").document(task.clientId).collection("users").document(task.userId).get())
+                return Uni.createFrom().future(firestore.collection("clients").document(task.businessId).collection("users").document(task.userId).get())
                     .onItem().transformToUni(userDoc -> {
                         if (!(userDoc instanceof DocumentSnapshot) || !((DocumentSnapshot) userDoc).exists()) {
-                            LOG.errorf("User not found: %s for client %s", task.userId, task.clientId);
+                            LOG.errorf("User not found: %s for client %s", task.userId, task.businessId);
                             return Uni.createFrom().voidItem();
                         }
                         StorageCredentials creds = new StorageCredentials((Map<String, Object>) userDoc.get("token"));
@@ -78,7 +78,7 @@ public class SyncWorker {
             .flatMap(authSuccess -> {
                 if (!authSuccess) {
                     LOG.errorf("Authentication failed for source %s", task.source);
-                    updateStatus(task.clientId, "failed");
+                    updateStatus(task.businessId, "failed");
                     return Uni.createFrom().voidItem();
                 }
                 return provider.listFiles(task.folderId)
@@ -90,7 +90,7 @@ public class SyncWorker {
                                     .flatMap(stream -> {
                                         try {
                                             String content = tika.parseToString(stream);
-                                            LOG.infof("Processed file %s for client %s", file, task.clientId);
+                                            LOG.infof("Processed file %s for client %s", file, task.businessId);
                                             // Embed with Vertex AI, store in Vector Search (placeholder)
                                             return Uni.createFrom().voidItem();
                                         } catch (Exception e) {
@@ -108,10 +108,10 @@ public class SyncWorker {
                         }
                         return result;
                     })
-                    .invoke(() -> updateStatus(task.clientId, "completed"))
+                    .invoke(() -> updateStatus(task.businessId, "completed"))
                     .onFailure().invoke(throwable -> {
                         LOG.errorf("Processing failed: %s", throwable.getMessage());
-                        updateStatus(task.clientId, "failed");
+                        updateStatus(task.businessId, "failed");
                     });
             });
     }
@@ -122,14 +122,14 @@ public class SyncWorker {
     }
 
     public static class SyncTask {
-        public String clientId; // businessId
+        public String businessId; // businessId
         public String userId;   // sub from JWT
         public String source;
         public String folderId;
 
         @Override
         public String toString() {
-            return "SyncTask{clientId='" + clientId + "', userId='" + userId + "', source='" + source + "', folderId='" + folderId + "'}";
+            return "SyncTask{clientId='" + businessId + "', userId='" + userId + "', source='" + source + "', folderId='" + folderId + "'}";
         }
     }
 }

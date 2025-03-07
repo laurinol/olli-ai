@@ -1,20 +1,22 @@
 services:
   firestore:
     image: google/cloud-sdk:latest
+    container_name: firestore
     command: gcloud emulators firestore start --host-port=0.0.0.0:8081
     ports:
       - "8081:8080"  # Expose the REST port as 8081
-      - "4000:4000"  # Expose the web interface port as 4000
   rabbitmq:
     image: rabbitmq:3
+    container_name: queue
     ports: [ "5672:5672" ]
   minio:
     image: minio/minio
+    container_name: s3-store
     command: server /data
     ports: [ "9000:9000" ]
   sftp:
     image: lscr.io/linuxserver/openssh-server
-    container_name: sftp-server
+    container_name: sftp
     ports: [ "2222:2222" ]
     environment:
       - PUID=1000
@@ -24,4 +26,5 @@ services:
       - USER_NAME=testuser
       - USER_PASSWORD=testpass
     volumes:
-      - ./test-files:/home/testuser
+      - ./test-files:/config/test-files
+    restart: unless-stopped
