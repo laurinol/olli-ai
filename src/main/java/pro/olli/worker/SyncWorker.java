@@ -4,132 +4,123 @@
 
 package pro.olli.worker;
 
-import com.google.cloud.firestore.DocumentSnapshot;
-import com.google.cloud.firestore.Firestore;
+import com.google.cloud.aiplatform.v1beta1.IndexDatapoint;
+import com.google.cloud.aiplatform.v1beta1.IndexDatapoint.Restriction; // Fix
+import com.google.cloud.aiplatform.v1beta1.IndexName;
+import com.google.cloud.aiplatform.v1beta1.IndexServiceClient;
+import com.google.cloud.aiplatform.v1beta1.UpsertDatapointsRequest;
+import com.google.gson.Gson;
 import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
-import org.apache.tika.Tika;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
-import pro.olli.model.StorageCredentials;
+import pro.olli.ai.EmbeddingService;
 import pro.olli.storage.StorageFactory;
 import pro.olli.storage.StorageProvider;
 
+import java.io.InputStream;
+import java.util.List;
 import java.util.Map;
-import pro.olli.storage.StorageProviderType;
 
-/**
- * Worker for processing sync tasks from Cloud Tasks.
- */
 @Startup
-@Path("/process")
-@ApplicationScoped
 public class SyncWorker {
 
     private static final Logger LOG = Logger.getLogger(SyncWorker.class);
 
-    private final Firestore firestore;
     private final StorageFactory storageFactory;
-    private final Tika tika;
+    private final EmbeddingService embeddingService;
+    private final IndexServiceClient indexServiceClient;
+    private final Gson gson;
 
-    public SyncWorker(Firestore firestore, StorageFactory storageFactory) {
-        this.firestore = firestore;
+    @Inject
+    public SyncWorker(StorageFactory storageFactory, EmbeddingService embeddingService, IndexServiceClient indexServiceClient) {
         this.storageFactory = storageFactory;
-        this.tika = new Tika();
+        this.embeddingService = embeddingService;
+        this.indexServiceClient = indexServiceClient;
+        this.gson = new Gson();
     }
 
-    @POST
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Uni<Void> processTask(SyncTask task) {
-        LOG.infof("Processing task: %s", task);
-        return Uni.createFrom().future(firestore.collection("syncRequests").document(task.businessId).get())
-            .onItem().transformToUni(syncDoc -> {
-                if (!(syncDoc instanceof DocumentSnapshot) || !((DocumentSnapshot) syncDoc).exists()) {
-                    LOG.errorf("Sync request not found: %s", task.businessId);
-                    return Uni.createFrom().voidItem();
-                }
-                return Uni.createFrom().future(firestore.collection("clients").document(task.businessId).collection("users").document(task.userId).get())
-                    .onItem().transformToUni(userDoc -> {
-                        if (!(userDoc instanceof DocumentSnapshot) || !((DocumentSnapshot) userDoc).exists()) {
-                            LOG.errorf("User not found: %s for client %s", task.userId, task.businessId);
-                            return Uni.createFrom().voidItem();
-                        }
-                        StorageCredentials creds = new StorageCredentials((Map<String, Object>) userDoc.get("token"));
-                        String folderId = task.folderId != null ? task.folderId : System.getenv("GOOGLE_TEST_FOLDER_ID");
-                        StorageProviderType type = StorageProviderType.fromString(task.source);
-                        if (type == null) {
-                            LOG.errorf("Unsupported source: %s", task.source);
-                            return Uni.createFrom().voidItem();
-                        }
-                        StorageProvider provider = storageFactory.getProvider(task.source);
-                        return processTaskWithProvider(task, creds, provider);
-                    });
-            });
+    public Uni<Void> processTask(String taskId, String jsonPayload) {
+        return Uni.createFrom().emitter(emitter -> {
+            Map<String, String> taskData = gson.fromJson(jsonPayload, Map.class);
+            String clientId = taskData.get("clientId");
+            String userId = taskData.get("userId");
+            String source = taskData.get("source");
+            String folderId = taskData.get("folderId");
+
+            StorageProvider provider = storageFactory.getProvider(source);
+            if (provider == null) {
+                LOG.errorf("Unsupported source %s for task %s", source, taskId);
+                emitter.fail(new IllegalArgumentException("Unsupported source: " + source));
+                return;
+            }
+
+            provider.listFiles(folderId)
+                .flatMap(files -> Uni.createFrom().item(files)
+                    .map(fileList -> fileList.stream()
+                        .map(file -> processFile(provider, file, taskId, clientId, userId))
+                        .toList())
+                    .flatMap(unis -> Uni.combine().all().unis(unis).combinedWith(results -> null)))
+                .subscribe().with(
+                    results -> emitter.complete(null),
+                    emitter::fail
+                );
+        });
     }
 
-    private Uni<Void> processTaskWithProvider(SyncTask task, StorageCredentials creds, StorageProvider provider) {
-        return provider.authenticate(creds)
-            .flatMap(authSuccess -> {
-                if (!authSuccess) {
-                    LOG.errorf("Authentication failed for source %s", task.source);
-                    updateStatus(task.businessId, "failed");
-                    return Uni.createFrom().voidItem();
-                }
-                return provider.listFiles(task.folderId)
-                    .flatMap(files -> {
-                        Uni<Void> result = Uni.createFrom().voidItem();
-                        for (String file : files) {
-                            result = result.flatMap(v ->
-                                provider.downloadFile(file)
-                                    .flatMap(stream -> {
-                                        try {
-                                            String content = tika.parseToString(stream);
-                                            LOG.infof("Processed file %s for client %s", file, task.businessId);
-                                            // Embed with Vertex AI, store in Vector Search (placeholder)
-                                            return Uni.createFrom().voidItem();
-                                        } catch (Exception e) {
-                                            LOG.errorf("Failed to process file %s: %s", file, e.getMessage());
-                                            return Uni.createFrom().voidItem();
-                                        } finally {
-                                            try {
-                                                if (stream != null) stream.close();
-                                            } catch (Exception e) {
-                                                LOG.errorf("Failed to close stream: %s", e.getMessage());
-                                            }
-                                        }
-                                    })
-                            );
-                        }
-                        return result;
-                    })
-                    .invoke(() -> updateStatus(task.businessId, "completed"))
-                    .onFailure().invoke(throwable -> {
-                        LOG.errorf("Processing failed: %s", throwable.getMessage());
-                        updateStatus(task.businessId, "failed");
-                    });
-            });
+    private Uni<Void> processFile(StorageProvider provider, String file, String taskId, String clientId, String userId) {
+        return provider.downloadFile(file)
+            .flatMap(this::extractText)
+            .flatMap(text -> embeddingService.generateEmbedding(text))
+            .flatMap(embedding -> storeInVectorSearch(embedding, file, taskId, clientId, userId));
     }
 
-    private void updateStatus(String clientId, String status) {
-        firestore.collection("syncRequests").document(clientId)
-            .update("status", status, "lastSync", System.currentTimeMillis());
+    private Uni<String> extractText(InputStream inputStream) {
+        return Uni.createFrom().emitter(emitter -> {
+            try {
+                String text = new String(inputStream.readAllBytes());
+                emitter.complete(text);
+            } catch (Exception e) {
+                emitter.fail(e);
+            } finally {
+                try {
+                    inputStream.close();
+                } catch (Exception ignored) {}
+            }
+        });
     }
 
-    public static class SyncTask {
-        public String businessId; // businessId
-        public String userId;   // sub from JWT
-        public String source;
-        public String folderId;
+    private Uni<Void> storeInVectorSearch(List<Float> embedding, String file, String taskId, String clientId, String userId) {
+        return Uni.createFrom().emitter(emitter -> {
+            IndexName indexName = IndexName.of(projectId, location, "sync-index");
+            IndexDatapoint datapoint = IndexDatapoint.newBuilder()
+                .setDatapointId(taskId + "_" + file)
+                .addAllFeatureVector(embedding)
+                .addRestricts(Restriction.newBuilder().setNamespace("clientId").setAllowList(0, clientId).build()) // Fix
+                .addRestricts(Restriction.newBuilder().setNamespace("userId").setAllowList(1, userId).build())   // Fix
+                .addRestricts(Restriction.newBuilder().setNamespace("file").setAllowList(2, file).build())       // Fix
+                .build();
 
-        @Override
-        public String toString() {
-            return "SyncTask{clientId='" + businessId + "', userId='" + userId + "', source='" + source + "', folderId='" + folderId + "'}";
-        }
+            UpsertDatapointsRequest request = UpsertDatapointsRequest.newBuilder()
+                .setIndex(indexName.toString())
+                .addDatapoints(datapoint)
+                .build();
+
+            try {
+                indexServiceClient.upsertDatapoints(request);
+                LOG.infof("Stored embedding for file %s in Vector Search for task %s", file, taskId);
+                emitter.complete(null);
+            } catch (Exception e) {
+                LOG.errorf("Failed to store embedding for file %s in Vector Search: %s", file, e.getMessage());
+                emitter.fail(e);
+            }
+        });
     }
+
+    @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai-2025")
+    String projectId;
+
+    @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-central1")
+    String location;
 }

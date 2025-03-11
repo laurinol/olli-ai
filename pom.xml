@@ -33,7 +33,7 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-arc</artifactId>
     </dependency>
-    <!-- Web App -->
+    <!-- REST -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-resteasy-reactive</artifactId>
@@ -58,6 +58,16 @@
       <groupId>com.google.apis</groupId>
       <artifactId>google-api-services-drive</artifactId>
       <version>v3-rev20241206-2.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.cloud</groupId>
+      <artifactId>google-cloud-aiplatform</artifactId>
+      <version>3.60.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.cloud</groupId>
+      <artifactId>google-cloud-vertexai</artifactId>
+      <version>1.19.0</version>
     </dependency>
     <dependency>
       <groupId>com.google.auth</groupId>
@@ -136,6 +146,13 @@
       <groupId>eu.agno3.jcifs</groupId>
       <artifactId>jcifs-ng</artifactId>
       <version>2.1.10</version>
+    </dependency>
+    <!-- RabbitMQ -->
+    <!-- https://mvnrepository.com/artifact/com.rabbitmq/amqp-client -->
+    <dependency>
+      <groupId>com.rabbitmq</groupId>
+      <artifactId>amqp-client</artifactId>
+      <version>5.25.0</version>
     </dependency>
     <!-- Testing -->
     <dependency>
