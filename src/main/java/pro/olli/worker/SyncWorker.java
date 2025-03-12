@@ -28,6 +28,12 @@ public class SyncWorker {
 
     private static final Logger LOG = Logger.getLogger(SyncWorker.class);
 
+    @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai")
+    String projectId;
+
+    @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-west1")
+    String location;
+
     private final StorageFactory storageFactory;
     private final EmbeddingService embeddingService;
     private final IndexServiceClient indexServiceClient;
@@ -117,10 +123,4 @@ public class SyncWorker {
             }
         });
     }
-
-    @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai-2025")
-    String projectId;
-
-    @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-central1")
-    String location;
 }

@@ -4,11 +4,13 @@
 
 package pro.olli.ai;
 
+import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @ApplicationScoped
+@Startup
 public class AiFactory {
 
     @ConfigProperty(name = "ai.provider", defaultValue = "vertex")
@@ -16,11 +18,14 @@ public class AiFactory {
 
     @Produces
     @ApplicationScoped
-    public EmbeddingService createEmbeddingService() {
-        return switch (aiProvider.toLowerCase()) {
-            case "vertex" -> new VertexAiEmbeddingService();
-            case "ollama" -> new OllamaEmbeddingService();
-            default -> throw new IllegalArgumentException("Unknown AI provider: " + aiProvider);
-        };
+    public QueryService createQueryService() {
+        switch (aiProvider.toLowerCase()) {
+            case "vertex":
+                return new VertexAiQueryService();
+            case "ollama":
+                return new OllamaQueryService();
+            default:
+                throw new IllegalArgumentException("Unknown AI provider: " + aiProvider);
+        }
     }
 }

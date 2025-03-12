@@ -34,7 +34,7 @@ public class VertexAiEmbeddingService implements EmbeddingService {
     @ConfigProperty(name = "gcp.vertex.endpoint-id", defaultValue = "your-endpoint-id") // Replace with your deployed endpoint ID
     String endpointId;
 
-    private final PredictionServiceClient predictionServiceClient;
+    protected final PredictionServiceClient predictionServiceClient;
 
     @Inject
     public VertexAiEmbeddingService() {
