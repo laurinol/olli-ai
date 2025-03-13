@@ -18,14 +18,21 @@ public class AiFactory {
 
     @Produces
     @ApplicationScoped
+    public EmbeddingService createEmbeddingService() {
+        return switch (aiProvider.toLowerCase()) {
+            case "vertex" -> new VertexAiEmbeddingService();
+            case "ollama" -> new OllamaEmbeddingService();
+            default -> throw new IllegalArgumentException("Unknown AI provider: " + aiProvider);
+        };
+    }
+
+    @Produces
+    @ApplicationScoped
     public QueryService createQueryService() {
-        switch (aiProvider.toLowerCase()) {
-            case "vertex":
-                return new VertexAiQueryService();
-            case "ollama":
-                return new OllamaQueryService();
-            default:
-                throw new IllegalArgumentException("Unknown AI provider: " + aiProvider);
-        }
+        return switch (aiProvider.toLowerCase()) {
+            case "vertex" -> new VertexAiQueryService();
+            case "ollama" -> new OllamaQueryService();
+            default -> throw new IllegalArgumentException("Unknown AI provider: " + aiProvider);
+        };
     }
 }

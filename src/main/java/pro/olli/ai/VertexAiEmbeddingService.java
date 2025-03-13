@@ -11,8 +11,11 @@ import com.google.cloud.aiplatform.v1.PredictionServiceClient;
 import com.google.cloud.aiplatform.v1.PredictionServiceSettings;
 import com.google.protobuf.Value;
 import com.google.protobuf.util.JsonFormat;
+import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -25,10 +28,10 @@ public class VertexAiEmbeddingService implements EmbeddingService {
 
     private static final Logger LOG = Logger.getLogger(VertexAiEmbeddingService.class);
 
-    @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai-2025")
+    @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai")
     String projectId;
 
-    @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-central1")
+    @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-west1")
     String location;
 
     @ConfigProperty(name = "gcp.vertex.endpoint-id", defaultValue = "your-endpoint-id") // Replace with your deployed endpoint ID

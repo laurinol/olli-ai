@@ -16,7 +16,7 @@ import jcifs.smb.SmbException;
 import jcifs.smb.SmbFile;
 import jcifs.smb.SmbFileInputStream;
 import org.jboss.logging.Logger;
-import pro.olli.model.StorageCredentials;
+import pro.olli.models.StorageCredentials;
 import pro.olli.storage.StorageProvider;
 import pro.olli.storage.StorageProviderType;
 

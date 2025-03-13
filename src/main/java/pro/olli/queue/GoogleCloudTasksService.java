@@ -16,17 +16,16 @@ import org.jboss.logging.Logger;
 
 import java.nio.charset.StandardCharsets;
 
-// No @ApplicationScoped - plain class
 public class GoogleCloudTasksService implements TaskQueueService {
 
     private static final Logger LOG = Logger.getLogger(GoogleCloudTasksService.class);
 
     private final CloudTasksClient cloudTasksClient;
 
-    @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai-2025")
+    @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai")
     String projectId;
 
-    @ConfigProperty(name = "gcp.tasks.location", defaultValue = "us-central1")
+    @ConfigProperty(name = "gcp.tasks.location", defaultValue = "us-west1")
     String location;
 
     @ConfigProperty(name = "gcp.tasks.queue", defaultValue = "sync-queue")

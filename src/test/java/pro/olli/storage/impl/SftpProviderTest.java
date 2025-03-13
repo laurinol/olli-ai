@@ -12,7 +12,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import pro.olli.model.StorageCredentials;
+import pro.olli.models.StorageCredentials;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;

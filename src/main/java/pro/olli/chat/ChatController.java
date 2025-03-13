@@ -26,9 +26,9 @@ import java.security.Principal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import pro.olli.model.ChatRequest;
-import pro.olli.model.ChatResponse;
-import pro.olli.model.Conversation;
+import pro.olli.models.ChatRequest;
+import pro.olli.models.ChatResponse;
+import pro.olli.models.Conversation;
 
 @Path("/chat")
 @Authenticated
@@ -36,14 +36,16 @@ public class ChatController {
 
     private static final Logger LOG = Logger.getLogger(ChatController.class);
 
-    @Inject
-    Firestore firestore;
+    private final Firestore firestore;
+    private final QueryService queryService;
+    private final SecurityContext securityContext;
 
     @Inject
-    QueryService queryService;
-
-    @Context
-    SecurityContext securityContext;
+    public ChatController(Firestore firestore, QueryService queryService, SecurityContext securityContext) {
+        this.firestore = firestore;
+        this.queryService = queryService;
+        this.securityContext = securityContext;
+    }
 
     @POST
     @Path("/query")

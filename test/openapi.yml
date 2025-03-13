@@ -1,0 +1,247 @@
+openapi: 3.0.3
+info:
+  title: Olli-AI API
+  description: REST API for Olli-AI, supporting authentication and chat functionality.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://olli-ai-2025.appspot.com
+    description: Production server (GCP App Engine)
+paths:
+  /auth/google/callback:
+    get:
+      summary: Google OAuth Callback
+      description: Handles Google OAuth callback, exchanges code for token, and issues JWT.
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful authentication
+          headers:
+            Authorization:
+              schema:
+                type: string
+                example: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Authentication failed
+  /auth/facebook/callback:
+    get:
+      summary: Facebook OAuth Callback
+      description: Handles Facebook OAuth callback, exchanges code for token, and issues JWT.
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful authentication
+          headers:
+            Authorization:
+              schema:
+                type: string
+        '401':
+          description: Authentication failed
+  /auth/x/callback:
+    get:
+      summary: X OAuth Callback
+      description: Handles X OAuth 1.0a callback, exchanges tokens, and issues JWT.
+      parameters:
+        - name: oauth_token
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: oauth_verifier
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful authentication
+          headers:
+            Authorization:
+              schema:
+                type: string
+        '401':
+          description: Authentication failed
+  /auth/microsoft/callback:
+    get:
+      summary: Microsoft OAuth Callback
+      description: Handles Microsoft OAuth callback, exchanges code for token, and issues JWT.
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful authentication
+          headers:
+            Authorization:
+              schema:
+                type: string
+        '401':
+          description: Authentication failed
+  /auth/register:
+    post:
+      summary: Register Email/Password User
+      description: Registers a new user with email and password, stores in Firestore, and issues JWT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        '200':
+          description: User registered successfully
+          headers:
+            Authorization:
+              schema:
+                type: string
+        '500':
+          description: Registration failed
+  /auth/login:
+    post:
+      summary: Login with Email/Password
+      description: Authenticates a user with email and password, issues JWT if valid.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          headers:
+            Authorization:
+              schema:
+                type: string
+        '401':
+          description: Invalid credentials
+        '500':
+          description: Login failed
+  /chat/query:
+    post:
+      summary: Query LLM with Prompt and History
+      description: Sends a chat query to the LLM, stores response in Firestore, requires authentication.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Query failed
+  /chat/history:
+    get:
+      summary: Get Chat History
+      description: Retrieves conversation history for the authenticated user from Firestore.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Chat history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Conversation'
+        '401':
+          description: Unauthorized
+        '500':
+          description: History fetch failed
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - password
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - password
+    ChatRequest:
+      type: object
+      properties:
+        prompt:
+          type: string
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+      required:
+        - prompt
+    ChatResponse:
+      type: object
+      properties:
+        response:
+          type: string
+      required:
+        - response
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+      required:
+        - id
+        - messages
+    ChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+      required:
+        - role
+        - content
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -5,7 +5,10 @@
 package pro.olli.ai;
 
 import io.quarkus.rest.client.reactive.QuarkusRestClientBuilder;
+import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Named;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.POST;
@@ -22,7 +25,7 @@ public class OllamaEmbeddingService implements EmbeddingService {
     private static final Logger LOG = Logger.getLogger(OllamaEmbeddingService.class);
 
     @ConfigProperty(name = "ollama.endpoint", defaultValue = "http://localhost:11434")
-    String ollamaEndpoint;
+    protected String ollamaEndpoint;
 
     private final OllamaApi ollamaApi;
 

@@ -5,9 +5,14 @@ services:
     command: gcloud emulators firestore start --host-port=0.0.0.0:8081
     ports: [ "8081:8080" ]  # Expose the REST port as 8081
   rabbitmq:
-    image: rabbitmq:3
+    image: rabbitmq:management
     container_name: queue
-    ports: [ "5672:5672" ]
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=pass1234
+    ports:
+      - "5672:5672"
+      - "15672:15672"
   ollama:
     image: ollama/ollama
     container_name: ollama
@@ -29,7 +34,7 @@ services:
       - "9001:9001"  # Console
     environment:
       - MINIO_ROOT_USER=admin
-      - MINIO_ROOT_PASSWORD=password
+      - MINIO_ROOT_PASSWORD=pass1234
     volumes:
       - ./minio-data:/data
   sftp:
@@ -46,3 +51,6 @@ services:
     volumes:
       - ./test-files:/config/test-files
     restart: unless-stopped
+networks:
+  default:
+    driver: bridge

@@ -9,10 +9,9 @@ import com.dropbox.core.v2.DbxClientV2;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
-import pro.olli.model.StorageCredentials;
+import pro.olli.models.StorageCredentials;
 import pro.olli.storage.StorageProvider;
 
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.List;
 import java.util.stream.Collectors;

@@ -5,7 +5,7 @@
 package pro.olli.storage;
 
 import io.smallrye.mutiny.Uni;
-import pro.olli.model.StorageCredentials;
+import pro.olli.models.StorageCredentials;
 
 import java.io.InputStream;
 import java.util.List;

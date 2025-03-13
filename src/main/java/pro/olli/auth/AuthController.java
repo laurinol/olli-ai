@@ -4,46 +4,74 @@
 
 package pro.olli.auth;
 
-import io.quarkus.oidc.runtime.OidcUtils;
-import io.smallrye.jwt.build.Jwt;
+import com.google.cloud.firestore.DocumentSnapshot;
+import com.google.cloud.firestore.FieldValue;
+import com.google.cloud.firestore.Firestore;
+import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
-import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import pro.olli.models.User;
+import java.util.HashMap;
+import java.util.Map;
 
 @Path("/auth")
 public class AuthController {
 
     @Inject
-    OidcUtils oidcUtils;
+    Firestore firestore;
 
-    @ConfigProperty(name = "quarkus.smallrye-jwt.sign.key")
-    String jwtSecret;
+    @POST
+    @Path("/register")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> register(User user) {
+        return Uni.createFrom().emitter(emitter -> {
+            try {
+                // Hash password (e.g., with BCrypt)
+                String hashedPassword = hashPassword(user.password);
+                Map<String, Object> userData = new HashMap<>();
+                userData.put("email", user.email);
+                userData.put("hashedPassword", hashedPassword);
+                userData.put("createdAt", FieldValue.serverTimestamp());
 
-    @GET
-    @Path("/google/callback")
-    public Response googleCallback(@QueryParam("code") String code) {
-        // Exchange code for token, get user info, issue JWT
-        String jwt = issueJwt("google", "user-id-from-google");
-        return Response.ok().header("Authorization", "Bearer " + jwt).build();
+                firestore.collection("users").document(user.email).set(userData).get();
+                String jwt = issueJwt(user.email); // Implement JWT issuance
+                emitter.complete(Response.ok().header("Authorization", "Bearer " + jwt).build());
+            } catch (Exception e) {
+                emitter.fail(e);
+            }
+        });
     }
 
-    // Similar for facebook, microsoft...
-
-    @GET
-    @Path("/x/callback")
-    public Response xCallback(@QueryParam("oauth_token") String token, @QueryParam("oauth_verifier") String verifier) {
-        // Custom X OAuth 1.0a flow
-        String jwt = issueJwt("x", "user-id-from-x");
-        return Response.ok().header("Authorization", "Bearer " + jwt).build();
+    @POST
+    @Path("/login")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> login(User user) { // User as LoginRequest
+        return Uni.createFrom().emitter(emitter -> {
+            try {
+                DocumentSnapshot doc = firestore.collection("users").document(user.email).get().get();
+                if (doc.exists()) {
+                    String storedHash = doc.getString("hashedPassword");
+                    if (verifyPassword(user.password, storedHash)) {
+                        String jwt = issueJwt(user.email);
+                        emitter.complete(Response.ok().header("Authorization", "Bearer " + jwt).build());
+                    } else {
+                        emitter.complete(Response.status(401).build());
+                    }
+                } else {
+                    emitter.complete(Response.status(401).build());
+                }
+            } catch (Exception e) {
+                emitter.fail(e);
+            }
+        });
     }
 
-    private String issueJwt(String provider, String userId) {
-        return Jwt.issuer("olli-ai")
-            .subject(userId)
-            .claim("provider", provider)
-            .signWithSecret(jwtSecret);
-    }
+    // Stub methods
+    private String hashPassword(String password) { /* Implement hashing */ return password; }
+    private boolean verifyPassword(String password, String hash) { /* Implement verification */ return password.equals(hash); }
+    private String issueJwt(String email) { /* Implement JWT */ return "jwt-token"; }
 }

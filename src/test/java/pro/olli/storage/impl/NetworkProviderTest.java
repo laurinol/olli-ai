@@ -11,7 +11,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import jcifs.smb.SmbFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import pro.olli.model.StorageCredentials;
+import pro.olli.models.StorageCredentials;
 
 import java.util.List;
 

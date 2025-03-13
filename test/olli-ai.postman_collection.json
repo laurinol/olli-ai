@@ -1,0 +1,182 @@
+{
+  "info": {
+    "name": "Olli-AI API",
+    "description": "Postman collection for Olli-AI REST endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Google OAuth Callback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/google/callback?code={{googleCode}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "google", "callback"],
+              "query": [{ "key": "code", "value": "{{googleCode}}" }]
+            }
+          }
+        },
+        {
+          "name": "Facebook OAuth Callback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/facebook/callback?code={{facebookCode}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "facebook", "callback"],
+              "query": [{ "key": "code", "value": "{{facebookCode}}" }]
+            }
+          }
+        },
+        {
+          "name": "X OAuth Callback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/x/callback?oauth_token={{xToken}}&oauth_verifier={{xVerifier}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "x", "callback"],
+              "query": [
+                { "key": "oauth_token", "value": "{{xToken}}" },
+                { "key": "oauth_verifier", "value": "{{xVerifier}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Microsoft OAuth Callback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/microsoft/callback?code={{microsoftCode}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "microsoft", "callback"],
+              "query": [{ "key": "code", "value": "{{microsoftCode}}" }]
+            }
+          }
+        },
+        {
+          "name": "Register Email/Password",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"test@example.com\", \"password\": \"password123\"}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login Email/Password",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"test@example.com\", \"password\": \"password123\"}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "Query LLM",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{jwtToken}}" }]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"prompt\": \"Hello, how are you?\", \"history\": [{\"role\": \"user\", \"content\": \"Hi\"}, {\"role\": \"assistant\", \"content\": \"Hey there\"}]}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chat/query",
+              "host": ["{{baseUrl}}"],
+              "path": ["chat", "query"]
+            }
+          }
+        },
+        {
+          "name": "Get Chat History",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{jwtToken}}" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/chat/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["chat", "history"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "description": "Base URL of the API"
+    },
+    {
+      "key": "googleCode",
+      "value": "sample-google-code",
+      "description": "Google OAuth code (replace with real value)"
+    },
+    {
+      "key": "facebookCode",
+      "value": "sample-facebook-code",
+      "description": "Facebook OAuth code (replace with real value)"
+    },
+    {
+      "key": "xToken",
+      "value": "sample-x-token",
+      "description": "X OAuth token (replace with real value)"
+    },
+    {
+      "key": "xVerifier",
+      "value": "sample-x-verifier",
+      "description": "X OAuth verifier (replace with real value)"
+    },
+    {
+      "key": "microsoftCode",
+      "value": "sample-microsoft-code",
+      "description": "Microsoft OAuth code (replace with real value)"
+    },
+    {
+      "key": "jwtToken",
+      "value": "your-jwt-token-here",
+      "description": "JWT token from auth (replace after login/register)"
+    }
+  ]
+}

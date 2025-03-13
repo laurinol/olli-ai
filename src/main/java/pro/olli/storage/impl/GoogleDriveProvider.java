@@ -13,7 +13,7 @@ import com.google.auth.oauth2.GoogleCredentials;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
-import pro.olli.model.StorageCredentials;
+import pro.olli.models.StorageCredentials;
 import pro.olli.storage.StorageProvider;
 
 import java.io.InputStream;
