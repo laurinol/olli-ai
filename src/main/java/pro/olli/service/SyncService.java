@@ -7,8 +7,12 @@ import com.google.gson.Gson;
 import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.reactive.messaging.Channel;
+import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.jboss.logging.Logger;
+import pro.olli.models.SyncTask;
 import pro.olli.queue.TaskQueueService;
 import pro.olli.repository.SyncRepository;
 import pro.olli.storage.StorageFactory;
@@ -31,6 +35,7 @@ public class SyncService {
     private final Gson gson;
     private final String projectId;
     private final String location;
+    private final Emitter<String> taskEmitter;
 
     public SyncService(
         TaskQueueService taskQueueService,
@@ -38,13 +43,15 @@ public class SyncService {
         SyncRepository syncRepository,
         Gson gson,
         @ConfigProperty(name = "quarkus.google.cloud.project-id", defaultValue = "olli-ai") String projectId,
-        @ConfigProperty(name = "quarkus.google.cloud.location", defaultValue = "us-west1") String location) {
+        @ConfigProperty(name = "quarkus.google.cloud.location", defaultValue = "us-west1") String location,
+        @Channel("sync-tasks") Emitter<String> taskEmitter) {
         this.taskQueueService = taskQueueService;
         this.storageFactory = storageFactory;
         this.syncRepository = syncRepository;
         this.gson = gson;
         this.projectId = projectId;
         this.location = location;
+        this.taskEmitter = taskEmitter;
     }
 
     public Uni<String> sync(String clientId, String userId, String source, String directory) {
@@ -57,11 +64,7 @@ public class SyncService {
             }
 
             String taskId = UUID.randomUUID().toString();
-            Map<String, String> taskData = new HashMap<>();
-            taskData.put("clientId", clientId);
-            taskData.put("userId", userId);
-            taskData.put("source", source);
-            taskData.put("folderId", directory);
+            SyncTask taskData = new SyncTask(clientId, userId, source, directory);
 
             String jsonPayload = gson.toJson(taskData);
             enqueueSyncTask(taskId, jsonPayload)
@@ -89,6 +92,6 @@ public class SyncService {
     }
 
     private Uni<Void> enqueueSyncTask(String taskId, String jsonPayload) {
-        return taskQueueService.enqueueTask(taskId, jsonPayload);
+        return Uni.createFrom().completionStage(taskEmitter.send(jsonPayload));
     }
 }

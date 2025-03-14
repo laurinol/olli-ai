@@ -11,7 +11,11 @@ import com.google.cloud.aiplatform.v1beta1.IndexServiceClient;
 import com.google.cloud.aiplatform.v1beta1.UpsertDatapointsRequest;
 import com.google.gson.Gson;
 import io.quarkus.runtime.Startup;
+import io.smallrye.reactive.messaging.annotations.Blocking;
+import io.smallrye.reactive.messaging.annotations.Channel;
+import org.eclipse.microprofile.reactive.messaging.Incoming;
 import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
@@ -23,7 +27,7 @@ import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 
-@Startup
+@ApplicationScoped
 public class SyncWorker {
 
     private static final Logger LOG = Logger.getLogger(SyncWorker.class);
@@ -47,6 +51,8 @@ public class SyncWorker {
         this.gson = new Gson();
     }
 
+    @Incoming("sync-tasks")
+    @Blocking(ordered = false)
     public Uni<Void> processTask(String taskId, String jsonPayload) {
         return Uni.createFrom().emitter(emitter -> {
             Map<String, String> taskData = gson.fromJson(jsonPayload, Map.class);

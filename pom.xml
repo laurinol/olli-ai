@@ -157,7 +157,10 @@
       <version>2.1.10</version>
     </dependency>
     <!-- RabbitMQ -->
-    <!-- https://mvnrepository.com/artifact/com.rabbitmq/amqp-client -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-smallrye-reactive-messaging-rabbitmq</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.rabbitmq</groupId>
       <artifactId>amqp-client</artifactId>
