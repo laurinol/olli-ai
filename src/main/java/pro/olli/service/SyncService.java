@@ -7,7 +7,6 @@ import com.google.gson.Gson;
 import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.reactive.messaging.Channel;
 import org.eclipse.microprofile.reactive.messaging.Emitter;
@@ -54,17 +53,17 @@ public class SyncService {
         this.taskEmitter = taskEmitter;
     }
 
-    public Uni<String> sync(String clientId, String userId, String source, String directory) {
+    public Uni<String> sync(String businessId, String userId, String source, String directory) {
         return Uni.createFrom().emitter(emitter -> {
             StorageProvider provider = storageFactory.getProvider(source);
             if (provider == null) {
-                LOG.errorf("Unsupported source: %s for client %s, user %s", source, clientId, userId);
+                LOG.errorf("Unsupported source: %s for client %s, user %s", source, businessId, userId);
                 emitter.complete("Unsupported source: " + source);
                 return;
             }
 
             String taskId = UUID.randomUUID().toString();
-            SyncTask taskData = new SyncTask(clientId, userId, source, directory);
+            SyncTask taskData = new SyncTask(businessId, userId, source, directory);
 
             String jsonPayload = gson.toJson(taskData);
             enqueueSyncTask(taskId, jsonPayload)
@@ -75,16 +74,16 @@ public class SyncService {
                     historyEntry.put("folderId", directory);
                     historyEntry.put("timestamp", Instant.now().toString());
 
-                    syncRepository.appendSyncHistory(clientId, userId, historyEntry)
+                    syncRepository.appendSyncHistory(businessId, userId, historyEntry)
                         .subscribe().with(
-                            ignored -> LOG.infof("Updated sync history for client %s, user %s", clientId, userId),
-                            e -> LOG.errorf("Failed to update sync history for client %s, user %s: %s", clientId, userId, e.getMessage())
+                            ignored -> LOG.infof("Updated sync history for client %s, user %s", businessId, userId),
+                            e -> LOG.errorf("Failed to update sync history for client %s, user %s: %s", businessId, userId, e.getMessage())
                         );
                 })
                 .subscribe().with(
                     v -> emitter.complete(taskId),
                     e -> {
-                        LOG.errorf("Failed to enqueue sync task for client %s, user %s: %s", clientId, userId, e.getMessage());
+                        LOG.errorf("Failed to enqueue sync task for client %s, user %s: %s", businessId, userId, e.getMessage());
                         emitter.complete("Failed to queue task: " + e.getMessage());
                     }
                 );

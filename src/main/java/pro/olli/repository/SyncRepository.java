@@ -11,5 +11,5 @@ import java.util.Map;
 public interface SyncRepository {
 
     // Append an entry to the syncHistory array for a client/user
-    Uni<Void> appendSyncHistory(String clientId, String userId, Map<String, Object> historyEntry);
+    Uni<Void> appendSyncHistory(String businessId, String userId, Map<String, Object> historyEntry);
 }

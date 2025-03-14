@@ -53,7 +53,6 @@ public class SyncResource {
         LOG.infof("OIDC enabled: %b, Profile: %s, Source: %s", oidcEnabled,
             System.getProperty("quarkus.profile", "prod"), source);
         String userId;
-        String clientId;
         boolean isDev = "dev".equals(System.getProperty("quarkus.profile", "prod"));
         boolean requiresAuth = oidcEnabled && !isDev && !source.equalsIgnoreCase("local");
 
@@ -71,7 +70,6 @@ public class SyncResource {
                 .entity(Map.of("error", "Business ID is required"))
                 .build());
         }
-        clientId = businessId; // Use query param
         userId = ctx.getUserPrincipal() != null ? ctx.getUserPrincipal().getName() :
             System.getenv("TEST_USER_ID") != null ? System.getenv("TEST_USER_ID") : UUID.randomUUID().toString();
 
@@ -81,11 +79,11 @@ public class SyncResource {
             LOG.infof("Authenticated userId: %s", userId);
         }
 
-        LOG.infof("Sync requested for client %s, user %s, source %s, folderId %s", clientId, userId, source, folderId);
-        return syncService.sync(clientId, userId, source, folderId)
+        LOG.infof("Sync requested for client %s, user %s, source %s, folderId %s", businessId, userId, source, folderId);
+        return syncService.sync(businessId, userId, source, folderId)
             .map(taskId -> {
                 if (taskId == null || taskId.startsWith("Failed")) {
-                    LOG.warnf("No task ID returned for client %s, user %s, source %s", clientId, userId, source);
+                    LOG.warnf("No task ID returned for client %s, user %s, source %s", businessId, userId, source);
                     return Response.status(Response.Status.NO_CONTENT)
                         .entity(Map.of("message", "No sync task created"))
                         .build();
@@ -93,7 +91,7 @@ public class SyncResource {
                 return Response.ok(Map.of("taskId", taskId, "message", "Sync queued")).build();
             })
             .onFailure().recoverWithItem(throwable -> {
-                LOG.errorf("Sync failed for client %s, user %s, source %s: %s", clientId, userId, source,
+                LOG.errorf("Sync failed for client %s, user %s, source %s: %s", businessId, userId, source,
                     throwable.getMessage());
                 return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(Map.of("error", "Sync failed: " + throwable.getMessage()))

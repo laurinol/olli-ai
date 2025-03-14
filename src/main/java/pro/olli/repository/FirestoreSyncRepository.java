@@ -21,15 +21,15 @@ public class FirestoreSyncRepository implements SyncRepository {
     }
 
     @Override
-    public Uni<Void> appendSyncHistory(String clientId, String userId, Map<String, Object> historyEntry) {
+    public Uni<Void> appendSyncHistory(String businessId, String userId, Map<String, Object> historyEntry) {
         return Uni.createFrom().future(
-                firestore.collection("clients").document(clientId)
+                firestore.collection("clients").document(businessId)
                     .collection("users").document(userId)
                     .update("syncHistory", FieldValue.arrayUnion(historyEntry))
             ).map(ignored -> (Void) null)
             .onFailure().recoverWithUni(() ->
                 Uni.createFrom().future(
-                    firestore.collection("clients").document(clientId)
+                    firestore.collection("clients").document(businessId)
                         .collection("users").document(userId)
                         .set(Map.of("syncHistory", java.util.Collections.singletonList(historyEntry)))
                 ).map(ignored -> (Void) null)

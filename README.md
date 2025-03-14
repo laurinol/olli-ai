@@ -36,7 +36,7 @@ cd olli-ai/backend
   ```
   GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
   GOOGLE_CLIENT_SECRET=GOCSPX-your-secret
-  TEST_CLIENT_ID=acme-corp
+  TEST_BUSINESS_ID=acme-corp
   TEST_USER_ID=test-user-123
   GOOGLE_ACCESS_TOKEN=ya29...  # For Google Drive - from OAuth Playground
   GOOGLE_TEST_FOLDER_ID=13vQSjN2Aj5lskZP704Zh5DNZvsBnfhYw

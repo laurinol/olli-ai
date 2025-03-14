@@ -10,9 +10,7 @@ import com.google.cloud.aiplatform.v1beta1.IndexName;
 import com.google.cloud.aiplatform.v1beta1.IndexServiceClient;
 import com.google.cloud.aiplatform.v1beta1.UpsertDatapointsRequest;
 import com.google.gson.Gson;
-import io.quarkus.runtime.Startup;
 import io.smallrye.reactive.messaging.annotations.Blocking;
-import io.smallrye.reactive.messaging.annotations.Channel;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -56,7 +54,7 @@ public class SyncWorker {
     public Uni<Void> processTask(String taskId, String jsonPayload) {
         return Uni.createFrom().emitter(emitter -> {
             Map<String, String> taskData = gson.fromJson(jsonPayload, Map.class);
-            String clientId = taskData.get("clientId");
+            String businessId = taskData.get("businessId");
             String userId = taskData.get("userId");
             String source = taskData.get("source");
             String folderId = taskData.get("folderId");
@@ -71,7 +69,7 @@ public class SyncWorker {
             provider.listFiles(folderId)
                 .flatMap(files -> Uni.createFrom().item(files)
                     .map(fileList -> fileList.stream()
-                        .map(file -> processFile(provider, file, taskId, clientId, userId))
+                        .map(file -> processFile(provider, file, taskId, businessId, userId))
                         .toList())
                     .flatMap(unis -> Uni.combine().all().unis(unis).combinedWith(results -> null)))
                 .subscribe().with(
@@ -81,11 +79,11 @@ public class SyncWorker {
         });
     }
 
-    private Uni<Void> processFile(StorageProvider provider, String file, String taskId, String clientId, String userId) {
+    private Uni<Void> processFile(StorageProvider provider, String file, String taskId, String businessId, String userId) {
         return provider.downloadFile(file)
             .flatMap(this::extractText)
             .flatMap(text -> embeddingService.generateEmbedding(text))
-            .flatMap(embedding -> storeInVectorSearch(embedding, file, taskId, clientId, userId));
+            .flatMap(embedding -> storeInVectorSearch(embedding, file, taskId, businessId, userId));
     }
 
     private Uni<String> extractText(InputStream inputStream) {
@@ -103,13 +101,13 @@ public class SyncWorker {
         });
     }
 
-    private Uni<Void> storeInVectorSearch(List<Float> embedding, String file, String taskId, String clientId, String userId) {
+    private Uni<Void> storeInVectorSearch(List<Float> embedding, String file, String taskId, String businessId, String userId) {
         return Uni.createFrom().emitter(emitter -> {
             IndexName indexName = IndexName.of(projectId, location, "sync-index");
             IndexDatapoint datapoint = IndexDatapoint.newBuilder()
                 .setDatapointId(taskId + "_" + file)
                 .addAllFeatureVector(embedding)
-                .addRestricts(Restriction.newBuilder().setNamespace("clientId").setAllowList(0, clientId).build()) // Fix
+                .addRestricts(Restriction.newBuilder().setNamespace("businessId").setAllowList(0, businessId).build()) // Fix
                 .addRestricts(Restriction.newBuilder().setNamespace("userId").setAllowList(1, userId).build())   // Fix
                 .addRestricts(Restriction.newBuilder().setNamespace("file").setAllowList(2, file).build())       // Fix
                 .build();
