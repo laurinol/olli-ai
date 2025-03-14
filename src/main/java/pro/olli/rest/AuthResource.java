@@ -1,14 +1,10 @@
 /*
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
-
 package pro.olli.rest;
 
-import com.google.cloud.firestore.DocumentSnapshot;
-import com.google.cloud.firestore.Firestore;
 import io.quarkus.oidc.runtime.OidcJwtCallerPrincipal;
 import io.smallrye.mutiny.Uni;
-import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -18,6 +14,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
 import org.jboss.logging.Logger;
+import pro.olli.repository.UserRepository;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -28,11 +25,12 @@ public class AuthResource {
 
     private static final Logger LOG = Logger.getLogger(AuthResource.class);
 
-    private final Firestore firestore;
+    private final UserRepository userRepository;
+    private final SecurityContext securityContext;
 
-    @Inject
-    public AuthResource(Firestore firestore) {
-        this.firestore = firestore;
+    public AuthResource(UserRepository userRepository, SecurityContext securityContext) {
+        this.userRepository = userRepository;
+        this.securityContext = securityContext;
     }
 
     @GET
@@ -59,33 +57,29 @@ public class AuthResource {
 
             String userId = principal.getSubject(); // Google sub
             String email = principal.getClaim("email");
-            String accessToken = principal.getClaim("access_token"); // From OIDC or Playground
+            String accessToken = principal.getClaim("access_token");
 
-            // Check if business exists
-            Uni.createFrom().future(firestore.collection("clients").document(businessId).get())
-                .onItem().transformToUni(doc -> {
-                    Map<String, Object> userData = new HashMap<>();
-                    userData.put("userId", userId);
-                    userData.put("email", email);
-                    userData.put("businessId", businessId);
-                    userData.put("createdAt", Instant.now().toString());
-                    userData.put("token", Map.of("accessToken", accessToken));
-                    userData.put("syncHistory", new java.util.ArrayList<>());
+            Map<String, Object> userData = new HashMap<>();
+            userData.put("userId", userId);
+            userData.put("email", email);
+            userData.put("businessId", businessId);
+            userData.put("createdAt", Instant.now().toString());
+            userData.put("token", Map.of("accessToken", accessToken));
+            userData.put("syncHistory", new java.util.ArrayList<>());
 
-                    if (!doc.exists()) {
+            userRepository.getBusiness(businessId)
+                .flatMap(businessOpt -> {
+                    if (businessOpt.isEmpty()) {
                         // New business - admin registers
                         Map<String, Object> businessData = new HashMap<>();
                         businessData.put("businessId", businessId);
-                        businessData.put("name", businessId); // Placeholder - enhance later
+                        businessData.put("name", businessId); // Placeholder
                         businessData.put("createdAt", Instant.now().toString());
-                        return Uni.createFrom().future(firestore.collection("clients").document(businessId).set(businessData))
-                            .flatMap(v -> Uni.createFrom().future(
-                                firestore.collection("clients").document(businessId)
-                                    .collection("users").document(userId).set(userData)));
+                        return userRepository.saveBusiness(businessId, businessData)
+                            .flatMap(v -> userRepository.saveBusinessUser(businessId, userId, userData));
                     } else {
                         // Existing business - add employee
-                        return Uni.createFrom().future(firestore.collection("clients").document(businessId)
-                            .collection("users").document(userId).set(userData));
+                        return userRepository.saveBusinessUser(businessId, userId, userData);
                     }
                 })
                 .subscribe().with(

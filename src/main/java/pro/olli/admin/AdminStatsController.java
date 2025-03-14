@@ -1,27 +1,24 @@
 /*
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
-
 package pro.olli.admin;
 
-import com.google.cloud.firestore.DocumentSnapshot;
-import com.google.cloud.firestore.Firestore;
 import com.google.cloud.tasks.v2.CloudTasksClient;
 import com.google.cloud.tasks.v2.QueueName;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 import io.quarkus.security.Authenticated;
 import io.smallrye.mutiny.Uni;
-import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
-import java.io.IOException;
-import java.util.concurrent.TimeoutException;
+import java.util.Optional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
+import pro.olli.repository.StatsRepository;
 
+import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -31,6 +28,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 @Path("/admin/stats")
 @Authenticated
@@ -39,65 +37,61 @@ public class AdminStatsController {
 
     private static final Logger LOG = Logger.getLogger(AdminStatsController.class);
 
-    private final Firestore firestore;
+    private final StatsRepository statsRepository;
     private final CloudTasksClient cloudTasksClient;
-    private final String queueProvider;
+    private final HttpClient httpClient = HttpClient.newHttpClient();
+
+    @ConfigProperty(name = "queue.provider", defaultValue = "google")
+    String queueProvider;
 
     // RabbitMQ config (dev only)
     @ConfigProperty(name = "rabbitmq.host", defaultValue = "localhost")
     String rabbitMqHost;
-
     @ConfigProperty(name = "rabbitmq.port", defaultValue = "5672")
     int rabbitMqPort;
-
     @ConfigProperty(name = "rabbitmq.username", defaultValue = "guest")
     String rabbitMqUsername;
-
     @ConfigProperty(name = "rabbitmq.password", defaultValue = "guest")
     String rabbitMqPassword;
-
     @ConfigProperty(name = "rabbitmq.management.port", defaultValue = "15672")
     int rabbitMqManagementPort;
 
     // Google Cloud Tasks config (prod)
     @ConfigProperty(name = "gcp.project-id")
     String projectId;
-
     @ConfigProperty(name = "gcp.location-id", defaultValue = "us-central1")
     String locationId;
-
     @ConfigProperty(name = "gcp.queue-id", defaultValue = "chat-requests")
     String queueId;
 
-    private final HttpClient httpClient = HttpClient.newHttpClient();
-
-    public AdminStatsController(Firestore firestore, CloudTasksClient cloudTasksClient, String queueProvider) {
-        this.firestore = firestore;
+    public AdminStatsController(StatsRepository statsRepository, CloudTasksClient cloudTasksClient) {
+        this.statsRepository = statsRepository;
         this.cloudTasksClient = cloudTasksClient;
-        this.queueProvider = queueProvider;
     }
 
     @GET
     public Uni<Map<String, Object>> getStats() {
-        Uni<DocumentSnapshot> firestoreStats = Uni.createFrom()
-            .future(firestore.collection("stats").document("global").get());
-
+        Uni<Optional<Map<String, Object>>> firestoreStats = statsRepository.getGlobalStats();
         Uni<Integer> queueLength = "google".equalsIgnoreCase(queueProvider)
             ? getGoogleCloudTasksQueueLength()
             : getRabbitMqQueueLength();
+        long thirtyDaysAgo = Instant.now().minus(30, ChronoUnit.DAYS).toEpochMilli();
 
         return firestoreStats
-            .flatMap(doc -> {
+            .flatMap(statsOpt -> {
                 Map<String, Object> stats = new HashMap<>();
-                if (doc.exists()) {
-                    stats.putAll(doc.getData());
-                } else {
-                    LOG.warn("No stats document found in Firestore");
-                }
+                statsOpt.ifPresent(stats::putAll);
 
                 // Customer Metrics
                 stats.putIfAbsent("totalCustomers", 0L);
-                stats.put("activeCustomers", getActiveCustomers());
+                return statsRepository.getActiveCustomersCount(thirtyDaysAgo)
+                    .map(active -> {
+                        stats.put("activeCustomers", active);
+                        return stats;
+                    });
+            })
+            .flatMap(stats -> queueLength.map(length -> {
+                stats.put("queueLength", length);
 
                 // Chat Metrics
                 stats.putIfAbsent("totalChatRequests", 0L);
@@ -116,32 +110,17 @@ public class AdminStatsController {
                 // Business Metrics
                 stats.put("estimatedMonthlyRevenue", calculateRevenue(stats));
 
-                return queueLength.map(length -> {
-                    stats.put("queueLength", length);
-                    return stats;
-                });
-            })
+                return stats;
+            }))
             .onFailure().invoke(e -> LOG.errorf("Failed to fetch stats: %s", e.getMessage()));
     }
 
-    private long getActiveCustomers() {
-        try {
-            long thirtyDaysAgo = Instant.now().minus(30, ChronoUnit.DAYS).toEpochMilli();
-            return firestore.collection("users")
-                .whereGreaterThanOrEqualTo("lastActive", thirtyDaysAgo)
-                .get().get().getDocuments().size();
-        } catch (Exception e) {
-            LOG.errorf("Failed to fetch active customers: %s", e.getMessage());
-            return 0L;
-        }
-    }
-
     private double calculateChatRequestsPerSec(Map<String, Object> stats) {
-        return 2.5; // Placeholder, implement with real data
+        return 2.5; // Placeholder
     }
 
     private long calculateDocsPerHour(Map<String, Object> stats) {
-        return 150L; // Placeholder, implement with real data
+        return 150L; // Placeholder
     }
 
     private String calculateUptime() {
@@ -156,8 +135,8 @@ public class AdminStatsController {
         status.put("Queue", "google".equalsIgnoreCase(queueProvider)
             ? checkGoogleCloudTasks() ? "✅" : "❌"
             : checkRabbitMq() ? "✅" : "❌");
-        status.put("Firestore", checkFirestore() ? "✅" : "❌");
-        status.put("AI", "✅"); // Placeholder, add Vertex check if needed
+        status.put("Firestore", statsRepository.checkConnectivity().await().indefinitely() ? "✅" : "❌");
+        status.put("AI", "✅"); // Placeholder
         return status;
     }
 
@@ -193,8 +172,7 @@ public class AdminStatsController {
             httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(response -> {
                     if (response.statusCode() == 200) {
-                        String body = response.body();
-                        return extractMessagesFromJson(body);
+                        return extractMessagesFromJson(response.body());
                     } else {
                         LOG.warnf("RabbitMQ API returned %d", response.statusCode());
                         return 0;
@@ -217,7 +195,7 @@ public class AdminStatsController {
     private boolean checkGoogleCloudTasks() {
         try {
             QueueName queueName = QueueName.of(projectId, locationId, queueId);
-            cloudTasksClient.getQueue(queueName); // Simple existence check
+            cloudTasksClient.getQueue(queueName);
             return true;
         } catch (Exception e) {
             LOG.errorf("Google Cloud Tasks check failed: %s", e.getMessage());
@@ -233,19 +211,10 @@ public class AdminStatsController {
             factory.setUsername(rabbitMqUsername);
             factory.setPassword(rabbitMqPassword);
             Connection connection = factory.newConnection();
+            connection.close();
+            return true;
         } catch (IOException | TimeoutException e) {
             LOG.errorf("RabbitMQ check failed: %s", e.getMessage());
-            return false;
-        }
-        return true;
-    }
-
-    private boolean checkFirestore() {
-        try {
-            firestore.collection("stats").document("test").get().get();
-            return true;
-        } catch (Exception e) {
-            LOG.errorf("Firestore check failed: %s", e.getMessage());
             return false;
         }
     }

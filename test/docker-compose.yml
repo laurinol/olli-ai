@@ -1,9 +1,19 @@
 services:
   firestore:
-    image: google/cloud-sdk:latest
+    image: google/cloud-sdk
     container_name: firestore
     command: gcloud emulators firestore start --host-port=0.0.0.0:8081
     ports: [ "8081:8080" ]  # Expose the REST port as 8081
+  #firebase:
+  #  image: voraciousdev/firebase-tools
+  #  container_name: firebase
+  #  environment:
+  #    - FIREBASE_PROJECT_ID=oll-ai-dev
+  #    - FIREBASE_TOKEN=1//068JU-3UYUsxDCgYIARAAGAYSNwF-L9IreRBohSSM9uetNw82RNOA9o2eRO_P5xQk1bgqF6VP5RuTfGTDbDebgPBLTMkYqmh56JQ
+  #  ports:
+  #    - "4000:4000"  # UI port
+  #    - "8080:8080"  # Firestore emulator port
+  #    - "9099:9099"  # auth
   rabbitmq:
     image: rabbitmq:management
     container_name: queue

@@ -1,27 +1,23 @@
 /*
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
-
 package pro.olli.service;
 
-import com.google.api.core.ApiFuture;
-import com.google.cloud.firestore.FieldValue;
-import com.google.cloud.firestore.Firestore;
-import com.google.cloud.firestore.WriteResult;
+import com.google.gson.Gson;
 import io.quarkus.test.junit.QuarkusTest;
 import io.smallrye.mutiny.Uni;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import pro.olli.queue.TaskQueueService;
+import pro.olli.repository.SyncRepository;
 import pro.olli.storage.StorageFactory;
 import pro.olli.storage.StorageProvider;
-
-import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @QuarkusTest
@@ -30,27 +26,30 @@ class SyncServiceTest {
     private SyncService syncService;
     private TaskQueueService taskQueueService;
     private StorageFactory storageFactory;
-    private Firestore firestore;
+    private SyncRepository syncRepository;
+    private Gson gson;
 
     @BeforeEach
     void setUp() {
         taskQueueService = Mockito.mock(TaskQueueService.class);
         storageFactory = Mockito.mock(StorageFactory.class);
-        firestore = Mockito.mock(Firestore.class);
-        syncService = new SyncService(taskQueueService, storageFactory, firestore);
+        syncRepository = Mockito.mock(SyncRepository.class);
+        gson = Mockito.mock(Gson.class); // Mock Gson, though we could use a real instance
+        String projectId = "test-project"; // Dummy value
+        String location = "us-test1"; // Dummy value
+        syncService = new SyncService(taskQueueService, storageFactory, syncRepository, gson, projectId, location);
     }
 
     @Test
-    void testSyncSuccess() throws Exception {
+    void testSyncSuccess() {
         // Arrange
         StorageProvider provider = Mockito.mock(StorageProvider.class);
         when(storageFactory.getProvider("local")).thenReturn(provider);
         when(taskQueueService.enqueueTask(anyString(), anyString()))
             .thenReturn(Uni.createFrom().nullItem());
-
-        CompletableFuture<WriteResult> future = CompletableFuture.completedFuture(mock(WriteResult.class));
-        when(firestore.collection("clients").document("acme-corp").collection("users").document("john-123")
-            .update("syncHistory", FieldValue.arrayUnion(any()))).thenReturn((ApiFuture<WriteResult>) future);
+        when(syncRepository.appendSyncHistory(eq("acme-corp"), eq("john-123"), any()))
+            .thenReturn(Uni.createFrom().nullItem());
+        when(gson.toJson(any())).thenReturn("mocked-json-payload");
 
         // Act
         Uni<String> taskIdUni = syncService.sync("acme-corp", "john-123", "local", "testfolder");
@@ -59,8 +58,8 @@ class SyncServiceTest {
         // Assert
         assertEquals(36, taskId.length(), "Task ID should be a UUID"); // UUID length
         verify(taskQueueService, times(1)).enqueueTask(eq(taskId), anyString());
-        verify(firestore.collection("clients").document("acme-corp").collection("users").document("john-123"), times(1))
-            .update(eq("syncHistory"), any());
+        verify(syncRepository, times(1)).appendSyncHistory(eq("acme-corp"), eq("john-123"), any());
+        verify(gson, times(1)).toJson(any());
     }
 
     @Test
@@ -75,20 +74,20 @@ class SyncServiceTest {
         // Assert
         assertEquals("Unsupported source: invalid", result, "Should return unsupported source message");
         verify(taskQueueService, never()).enqueueTask(anyString(), anyString());
-        verify(firestore, never()).collection(anyString());
+        verify(syncRepository, never()).appendSyncHistory(anyString(), anyString(), any());
+        verify(gson, never()).toJson(any());
     }
 
     @Test
-    void testSyncTaskQueueFailure() throws Exception {
+    void testSyncTaskQueueFailure() {
         // Arrange
         StorageProvider provider = Mockito.mock(StorageProvider.class);
         when(storageFactory.getProvider("local")).thenReturn(provider);
         when(taskQueueService.enqueueTask(anyString(), anyString()))
             .thenReturn(Uni.createFrom().failure(new RuntimeException("Queue error")));
-
-        CompletableFuture<WriteResult> future = CompletableFuture.completedFuture(mock(WriteResult.class));
-        when(firestore.collection("clients").document("acme-corp").collection("users").document("john-123")
-            .update("syncHistory", FieldValue.arrayUnion(any()))).thenReturn((ApiFuture<WriteResult>) future);
+        when(syncRepository.appendSyncHistory(eq("acme-corp"), eq("john-123"), any()))
+            .thenReturn(Uni.createFrom().nullItem());
+        when(gson.toJson(any())).thenReturn("mocked-json-payload");
 
         // Act
         Uni<String> taskIdUni = syncService.sync("acme-corp", "john-123", "local", "testfolder");
@@ -97,6 +96,7 @@ class SyncServiceTest {
         // Assert
         assertTrue(result.startsWith("Failed to queue task: "), "Should return failure message");
         verify(taskQueueService, times(1)).enqueueTask(anyString(), anyString());
-        verify(firestore, never()).collection(anyString()); // History not updated on failure
+        verify(syncRepository, never()).appendSyncHistory(anyString(), anyString(), any());
+        verify(gson, times(1)).toJson(any());
     }
 }
