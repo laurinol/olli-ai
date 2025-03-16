@@ -62,6 +62,15 @@
       <artifactId>quarkus-arc-deployment</artifactId>
       <version>3.8.3</version>
     </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-smallrye-context-propagation</artifactId>
+    </dependency>
+    <!-- Fault Tolerance -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-smallrye-fault-tolerance</artifactId>
+    </dependency>
     <!-- Google Drive API -->
     <dependency>
       <groupId>com.google.apis</groupId>
@@ -157,10 +166,6 @@
       <version>2.1.10</version>
     </dependency>
     <!-- RabbitMQ -->
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-smallrye-reactive-messaging-rabbitmq</artifactId>
-    </dependency>
     <dependency>
       <groupId>com.rabbitmq</groupId>
       <artifactId>amqp-client</artifactId>

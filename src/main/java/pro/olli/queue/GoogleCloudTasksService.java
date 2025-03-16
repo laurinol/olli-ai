@@ -7,14 +7,18 @@ package pro.olli.queue;
 import com.google.cloud.tasks.v2.CloudTasksClient;
 import com.google.cloud.tasks.v2.HttpMethod;
 import com.google.cloud.tasks.v2.HttpRequest;
+import com.google.cloud.tasks.v2.ListTasksResponse;
 import com.google.cloud.tasks.v2.QueueName;
 import com.google.cloud.tasks.v2.Task;
 import com.google.protobuf.ByteString;
+import com.rabbitmq.client.GetResponse;
 import io.smallrye.mutiny.Uni;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
-
-import java.nio.charset.StandardCharsets;
+import pro.olli.models.DequeuedTask;
 
 public class GoogleCloudTasksService implements TaskQueueService {
 
@@ -57,6 +61,31 @@ public class GoogleCloudTasksService implements TaskQueueService {
                 emitter.complete(null);
             } catch (Exception e) {
                 LOG.errorf("Failed to enqueue task %s: %s", taskId, e.getMessage());
+                emitter.fail(e);
+            }
+        });
+    }
+
+    @Override
+    public Uni<DequeuedTask> dequeueTask() {
+        return Uni.createFrom().emitter(emitter -> {
+            try {
+                QueueName queueName = QueueName.of(projectId, location, queue);
+                CloudTasksClient.ListTasksPagedResponse pagedResponse = cloudTasksClient.listTasks(queueName);
+                Iterable<Task> tasks = pagedResponse.iterateAll();
+                Iterator<Task> iterator = tasks.iterator();
+                if (iterator.hasNext()) {
+                    Task task = iterator.next();
+                    String taskId = task.getName().substring(task.getName().lastIndexOf('/') + 1); // Extract taskId from name
+                    String jsonPayload = task.getAppEngineHttpRequest().getBody().toStringUtf8();
+                    cloudTasksClient.deleteTask(task.getName());
+                    LOG.infof("Dequeued task %s from Google Cloud Tasks: %s", taskId, jsonPayload);
+                    emitter.complete(new DequeuedTask(taskId, jsonPayload));
+                } else {
+                    emitter.fail(new IOException("No tasks available in Google Cloud Tasks queue: " + queue));
+                }
+            } catch (Exception e) {
+                LOG.errorf("Failed to dequeue task from Google Cloud Tasks: %s", e.getMessage());
                 emitter.fail(e);
             }
         });

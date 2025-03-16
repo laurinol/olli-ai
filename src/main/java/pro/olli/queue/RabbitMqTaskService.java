@@ -4,9 +4,11 @@
 
 package pro.olli.queue;
 
+import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
+import com.rabbitmq.client.GetResponse;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -15,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeoutException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
+import pro.olli.models.DequeuedTask;
 
 public class RabbitMqTaskService implements TaskQueueService {
 
@@ -72,11 +75,34 @@ public class RabbitMqTaskService implements TaskQueueService {
     public Uni<Void> enqueueTask(String taskId, String jsonPayload) {
         return Uni.createFrom().emitter(emitter -> {
             try {
-                channel.basicPublish("", queue, null, jsonPayload.getBytes(StandardCharsets.UTF_8));
+                AMQP.BasicProperties properties = new AMQP.BasicProperties.Builder()
+                    .messageId(taskId)
+                    .build();
+                channel.basicPublish("", queue, properties, jsonPayload.getBytes(StandardCharsets.UTF_8));
                 LOG.infof("Enqueued task %s to RabbitMQ", taskId);
                 emitter.complete(null);
             } catch (IOException e) {
                 LOG.errorf("Failed to enqueue task %s to RabbitMQ: %s", taskId, e.getMessage());
+                emitter.fail(e);
+            }
+        });
+    }
+
+    @Override
+    public Uni<DequeuedTask> dequeueTask() {
+        return Uni.createFrom().emitter(emitter -> {
+            try {
+                GetResponse response = channel.basicGet(queue, true); // Auto-ack
+                if (response != null) {
+                    String taskId = response.getProps().getMessageId();
+                    String jsonPayload = new String(response.getBody(), StandardCharsets.UTF_8);
+                    LOG.infof("Dequeued task %s from RabbitMQ: %s", taskId, jsonPayload);
+                    emitter.complete(new DequeuedTask(taskId, jsonPayload));
+                } else {
+                    emitter.fail(new IOException("No tasks available in RabbitMQ queue: " + queue));
+                }
+            } catch (IOException e) {
+                LOG.errorf("Failed to dequeue task from RabbitMQ: %s", e.getMessage());
                 emitter.fail(e);
             }
         });

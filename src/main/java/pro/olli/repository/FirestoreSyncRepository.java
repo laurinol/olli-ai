@@ -10,6 +10,7 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.Map;
+import pro.olli.models.SyncHistoryEntry;
 
 @ApplicationScoped
 public class FirestoreSyncRepository implements SyncRepository {
@@ -21,7 +22,7 @@ public class FirestoreSyncRepository implements SyncRepository {
     }
 
     @Override
-    public Uni<Void> appendSyncHistory(String businessId, String userId, Map<String, Object> historyEntry) {
+    public Uni<Void> appendSyncHistory(String businessId, String userId, SyncHistoryEntry historyEntry) {
         return Uni.createFrom().future(
                 firestore.collection("clients").document(businessId)
                     .collection("users").document(userId)

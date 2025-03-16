@@ -11,9 +11,16 @@ import com.google.cloud.aiplatform.v1.PredictionServiceClient;
 import com.google.cloud.aiplatform.v1.PredictionServiceSettings;
 import com.google.protobuf.Value;
 import com.google.protobuf.util.JsonFormat;
+import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
+import org.eclipse.microprofile.faulttolerance.Fallback;
+import org.eclipse.microprofile.faulttolerance.Retry;
+import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
+import java.time.temporal.ChronoUnit;
+import pro.olli.core.resilience.exception.AppException;
 
 import java.io.IOException;
 import java.util.List;
@@ -30,6 +37,19 @@ public class VertexAiQueryService extends VertexAiEmbeddingService implements Qu
     }
 
     @Override
+    @Retry(maxRetries = 3,
+        delay = 1000,
+        jitter = 200,
+        maxDuration = 10000,
+        retryOn = Exception.class,
+        abortOn = {AppException.class})
+    @Timeout(value = 10, unit = ChronoUnit.SECONDS)
+    @CircuitBreaker(requestVolumeThreshold = 15,
+        failureRatio = 0.4,
+        delay = 20000,
+        successThreshold = 2)
+    @CircuitBreakerName("vertex-ai-query")
+    @Fallback(fallbackMethod = "fallbackQuery")
     public Uni<String> query(String prompt, List<ChatMessage> history) {
         return Uni.createFrom().emitter(emitter -> {
             try {
@@ -40,11 +60,20 @@ public class VertexAiQueryService extends VertexAiEmbeddingService implements Qu
 
                 PredictResponse response = predictionServiceClient.predict(requestBuilder.build());
                 String result = extractChatResponse(response);
+                if (result == null || result.isEmpty()) {
+                    throw new AppException("Vertex AI returned empty chat response",
+                        AppException.ErrorType.EXTERNAL_SERVICE_ERROR);
+                }
                 LOG.infof("Generated chat response with Vertex AI: %s", result);
                 emitter.complete(result);
             } catch (Exception e) {
                 LOG.errorf("Chat query failed: %s", e.getMessage());
-                emitter.fail(e);
+                if (e instanceof AppException) {
+                    emitter.fail(e);
+                } else {
+                    emitter.fail(new AppException("Failed to generate chat response with Vertex AI", e,
+                        AppException.ErrorType.EXTERNAL_SERVICE_ERROR));
+                }
             }
         });
     }
@@ -86,7 +115,17 @@ public class VertexAiQueryService extends VertexAiEmbeddingService implements Qu
                 .getStringValue();
         } catch (Exception e) {
             LOG.errorf("Failed to parse chat response: %s", e.getMessage());
-            return "Error processing response";
+            throw new AppException("Failed to parse Vertex AI chat response", e,
+                AppException.ErrorType.EXTERNAL_SERVICE_ERROR);
         }
+    }
+    
+    public Uni<String> fallbackQuery(String prompt, List<ChatMessage> history) {
+        LOG.warnf("Using fallback query generation for prompt of length: %d", prompt.length());
+        return Uni.createFrom().item(() -> {
+            String fallbackResponse = "I'm sorry, but I'm currently experiencing technical difficulties. " +
+                "Please try again in a few moments or contact support if the issue persists.";
+            return fallbackResponse;
+        });
     }
 }
