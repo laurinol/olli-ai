@@ -14,8 +14,12 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
 import org.jboss.logging.Logger;
+import pro.olli.models.Business;
+import pro.olli.models.BusinessUser;
+import pro.olli.models.User;
 import pro.olli.repository.UserRepository;
 
+import java.security.Principal;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -40,6 +44,59 @@ public class AuthResource {
         return Response.status(Response.Status.TEMPORARY_REDIRECT)
             .header("Location", "http://localhost:8080/auth/google/callback?businessId=" + businessId)
             .build();
+    }
+
+    @GET
+    @Path("/profile")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> getProfile(@Context SecurityContext ctx) {
+        return Uni.createFrom().emitter(emitter -> {
+            Principal principal = ctx.getUserPrincipal();
+            if (principal == null) {
+                // Support test mode where no auth is required
+                if ("dev".equals(System.getProperty("quarkus.profile", "prod"))) {
+                    String testEmail = System.getProperty("test.email", "test@example.com");
+                    String testBusinessId = System.getProperty("test.businessId", "test-business");
+                    Map<String, Object> userData = new HashMap<>();
+                    userData.put("email", testEmail);
+                    userData.put("businessId", testBusinessId);
+                    userData.put("role", "admin");
+                    userData.put("dev", true);
+                    emitter.complete(Response.ok(userData).build());
+                    return;
+                }
+                LOG.error("No authenticated user in profile request");
+                emitter.complete(Response.status(Response.Status.UNAUTHORIZED).build());
+                return;
+            }
+
+            String userId = principal.getName();
+            userRepository.getUser(userId)
+                .flatMap(userOpt -> {
+                    if (userOpt.isEmpty()) {
+                        return Uni.createFrom().item(
+                            Response.status(Response.Status.NOT_FOUND)
+                                .entity(Map.of("error", "User not found"))
+                                .build()
+                        );
+                    }
+                    User user = userOpt.get();
+                    Map<String, Object> userData = new HashMap<>(user.getMetadata());
+                    userData.put("userId", user.getId());
+                    userData.put("email", user.getEmail());
+                    
+                    return Uni.createFrom().item(Response.ok(userData).build());
+                })
+                .subscribe().with(
+                    emitter::complete,
+                    error -> {
+                        LOG.errorf("Error retrieving user profile: %s", error.getMessage());
+                        emitter.complete(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity(Map.of("error", "Failed to retrieve profile"))
+                            .build());
+                    }
+                );
+        });
     }
 
     @GET
@@ -71,15 +128,20 @@ public class AuthResource {
                 .flatMap(businessOpt -> {
                     if (businessOpt.isEmpty()) {
                         // New business - admin registers
-                        Map<String, Object> businessData = new HashMap<>();
-                        businessData.put("businessId", businessId);
-                        businessData.put("name", businessId); // Placeholder
-                        businessData.put("createdAt", Instant.now().toString());
-                        return userRepository.saveBusiness(businessId, businessData)
-                            .flatMap(v -> userRepository.saveBusinessUser(businessId, userId, userData));
+                        Business business = new Business(businessId, businessId, "basic"); // Default to basic plan
+                        
+                        // Create business user
+                        BusinessUser businessUser = new BusinessUser(userId, businessId, email, 
+                            principal.getClaim("name"), "admin"); // Owner gets admin role
+                        
+                        return userRepository.saveBusiness(business)
+                            .flatMap(v -> userRepository.saveBusinessUser(businessUser));
                     } else {
                         // Existing business - add employee
-                        return userRepository.saveBusinessUser(businessId, userId, userData);
+                        BusinessUser businessUser = new BusinessUser(userId, businessId, email, 
+                            principal.getClaim("name"), "user"); // New users get standard role
+                            
+                        return userRepository.saveBusinessUser(businessUser);
                     }
                 })
                 .subscribe().with(

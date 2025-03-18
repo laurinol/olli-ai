@@ -11,6 +11,7 @@ import com.google.cloud.aiplatform.v1beta1.IndexServiceClient;
 import com.google.cloud.aiplatform.v1beta1.UpsertDatapointsRequest;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.gson.Gson;
+import io.quarkus.runtime.Startup;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.PostConstruct;
@@ -21,8 +22,18 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import org.eclipse.microprofile.faulttolerance.Bulkhead;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import org.apache.tika.exception.TikaException;
+import org.apache.tika.metadata.Metadata;
+import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.ParseContext;
+import org.apache.tika.parser.Parser;
+import org.apache.tika.sax.BodyContentHandler;
+import org.xml.sax.ContentHandler;
+import org.xml.sax.SAXException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.faulttolerance.Bulkhead;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
@@ -36,6 +47,7 @@ import pro.olli.storage.StorageFactory;
 import pro.olli.storage.StorageProvider;
 
 @ApplicationScoped
+@Startup
 public class SyncWorker {
 
     private static final Logger LOG = Logger.getLogger(SyncWorker.class);
@@ -46,8 +58,17 @@ public class SyncWorker {
     @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-west1")
     String location;
 
+    @ConfigProperty(name = "worker.backoff.initial-ms", defaultValue = "1000")
+    long initialBackoffMs;
+
+    @ConfigProperty(name = "worker.backoff.max-ms", defaultValue = "60000")
+    long maxBackoffMs;
+
+    @ConfigProperty(name = "worker.backoff.multiplier", defaultValue = "1.5")
+    double backoffMultiplier;
+
     private final StorageFactory storageFactory;
-    private final EmbeddingService embeddingService;
+    private final EmbeddingService embeddingService;  // @Named("ollamaEmbedding") would fix injection
     private final TaskQueueService taskQueueService;
     private final IndexServiceClient indexServiceClient;
     private final ExecutorService executorService;
@@ -69,25 +90,64 @@ public class SyncWorker {
 
     @PostConstruct
     public void startConsuming() {
-        int workerCount = Runtime.getRuntime().availableProcessors(); // TODO: Configurable
-        for (int i = 0; i < workerCount; i++) {
+        LOG.info("SyncWorker is initializing...");
+        int workerCount = 2; // Runtime.getRuntime().availableProcessors(); // TODO: Configurable
+        for (int i = 1; i < workerCount+1; i++) {
             executorService.submit(this::consumeTasks);
         }
         LOG.infof("Started %d SyncWorker threads for reading tasks from the queue", workerCount);
+        LOG.info("SyncWorker initialization complete - ready to process tasks");
     }
 
     private void consumeTasks() {
+        LOG.infof("Worker thread starting with backoff parameters: initial=%dms, max=%dms, multiplier=%.2f",
+                 initialBackoffMs, maxBackoffMs, backoffMultiplier);
+
+        // Use thread-local atomics for counters that need to be modified in lambda expressions
+        final AtomicLong currentBackoff = new AtomicLong(initialBackoffMs);
+        final AtomicInteger emptyPollCount = new AtomicInteger(0);
+        final AtomicLong lastLogTimestamp = new AtomicLong(0);
+
         while (!Thread.currentThread().isInterrupted()) {
+            final long backoffTime = currentBackoff.get(); // Capture current value for lambda
+
             taskQueueService.dequeueTask()
                 .subscribe().with(
-                    dequeuedTask -> processTask(dequeuedTask.getTaskId(), dequeuedTask.getJsonPayload())
-                        .subscribe().with(
-                            v -> LOG.infof("Processed task %s: %s", dequeuedTask.getTaskId(), dequeuedTask.getJsonPayload()),
-                            e -> LOG.errorf("Failed to process task %s: %s, error: %s", dequeuedTask.getTaskId(), dequeuedTask.getJsonPayload(), e.getMessage())
-                        ),
+                    dequeuedTask -> {
+                        // Reset backoff on successful task retrieval
+                        currentBackoff.set(initialBackoffMs);
+                        emptyPollCount.set(0);
+
+                        // Process the task
+                        processTask(dequeuedTask.getTaskId(), dequeuedTask.getJsonPayload())
+                            .subscribe().with(
+                                v -> LOG.infof("Processed task %s: %s", dequeuedTask.getTaskId(), dequeuedTask.getJsonPayload()),
+                                e -> LOG.errorf("Failed to process task %s: %s, error: %s", dequeuedTask.getTaskId(), dequeuedTask.getJsonPayload(), e.getMessage())
+                            );
+                    },
                     e -> {
-                        LOG.debugf("No tasks available, waiting: %s", e.getMessage());
-                        try { Thread.sleep(1000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                        // Increment empty poll counter
+                        int count = emptyPollCount.incrementAndGet();
+
+                        // Only log empty queue every 100 polls or every minute, to reduce log spam
+                        long currentTime = System.currentTimeMillis();
+                        long lastLog = lastLogTimestamp.get();
+
+                        if (count % 100 == 1 || (currentTime - lastLog) > 60000) {
+                            LOG.debugf("No tasks available (count: %d), backing off for %d ms: %s",
+                                       count, backoffTime, e.getMessage());
+                            lastLogTimestamp.set(currentTime);
+                        }
+
+                        // Apply exponential backoff with capped maximum
+                        try {
+                            Thread.sleep(backoffTime);
+                            // Increase backoff time for next iteration (capped at max)
+                            long newBackoff = Math.min(maxBackoffMs, (long)(backoffTime * backoffMultiplier));
+                            currentBackoff.set(newBackoff);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
                     }
                 );
         }
@@ -117,7 +177,7 @@ public class SyncWorker {
                 provider.listFiles(folderId)
                     .flatMap(files -> Uni.createFrom().item(files)
                         .map(fileList -> fileList.stream()
-                            .map(file -> processFile(provider, file, taskId, businessId, userId))
+                            .map(file -> processFile(provider, folderId + "/" + file, taskId, businessId, userId))
                             .toList())
                         .flatMap(unis -> Uni.combine().all().unis(unis).combinedWith(results -> null)))
                     .subscribe().with(
@@ -136,11 +196,27 @@ public class SyncWorker {
         retryOn = {Exception.class},
         abortOn = {AppException.class})
     @Fallback(fallbackMethod = "processingFileFallback")
-    private Uni<Void> processFile(StorageProvider provider, String file, String taskId, String businessId,
+    protected Uni<Void> processFile(StorageProvider provider, String file, String taskId, String businessId,
         String userId) {
+        LOG.infof("Processing sync file %s", file);
         return provider.downloadFile(file)
+            // Extract text using Apache Tika
             .flatMap(this::extractText)
+            // Add filename and file metadata as context at the beginning of the text
+            .map(text -> {
+                String fileExt = getFileExtension(file);
+                String fileType = mapFileExtensionToType(fileExt);
+                
+                // Add metadata header to the text to provide context to the embedding
+                String metadataPrefix = String.format(
+                    "File: %s\nType: %s\nBusiness: %s\n\nContent:\n", 
+                    file, fileType, businessId);
+                
+                return metadataPrefix + text;
+            })
+            // Generate embedding from the text with metadata
             .flatMap(text -> generateEmbeddingWithFaultTolerance(text, file))
+            // Store in vector search
             .flatMap(embedding -> storeInVectorSearchWithFaultTolerance(embedding, file, taskId, businessId, userId))
             .onFailure().transform(e -> {
                 if (e instanceof AppException) {
@@ -149,8 +225,44 @@ public class SyncWorker {
                 return new AppException("Failed to process file: " + file, e, AppException.ErrorType.SYSTEM_ERROR);
             });
     }
+    
+    /**
+     * Gets the file extension from a filename
+     */
+    private String getFileExtension(String filename) {
+        int lastDotIndex = filename.lastIndexOf('.');
+        if (lastDotIndex > 0 && lastDotIndex < filename.length() - 1) {
+            return filename.substring(lastDotIndex + 1).toLowerCase();
+        }
+        return "";
+    }
+    
+    /**
+     * Maps file extensions to more user-friendly type descriptions
+     */
+    private String mapFileExtensionToType(String extension) {
+        return switch (extension.toLowerCase()) {
+            case "pdf" -> "PDF Document";
+            case "doc", "docx" -> "Word Document";
+            case "xls", "xlsx" -> "Excel Spreadsheet";
+            case "ppt", "pptx" -> "PowerPoint Presentation";
+            case "txt" -> "Text Document";
+            case "csv" -> "CSV Spreadsheet";
+            case "jpg", "jpeg", "png", "gif", "bmp" -> "Image";
+            case "mp3", "wav", "ogg" -> "Audio";
+            case "mp4", "avi", "mov" -> "Video";
+            case "zip", "tar", "gz", "rar" -> "Archive";
+            case "html", "htm" -> "Web Page";
+            case "json" -> "JSON Data";
+            case "xml" -> "XML Data";
+            case "odt" -> "OpenDocument Text";
+            case "ods" -> "OpenDocument Spreadsheet";
+            case "odp" -> "OpenDocument Presentation";
+            default -> "Unknown Document Type";
+        };
+    }
 
-    private Uni<Void> processingFileFallback(StorageProvider provider, String file, String taskId,
+    protected Uni<Void> processingFileFallback(StorageProvider provider, String file, String taskId,
         String businessId, String userId, Throwable cause) {
         LOG.warnf("Falling back on file processing for %s due to: %s", file, cause.getMessage());
         // Record the failure
@@ -164,7 +276,7 @@ public class SyncWorker {
     @CircuitBreakerName("embedding-service")
     @Retry(maxRetries = 2, delay = 1000)
     @Timeout(5000)
-    private Uni<List<Float>> generateEmbeddingWithFaultTolerance(String text, String fileIdentifier) {
+    protected Uni<List<Float>> generateEmbeddingWithFaultTolerance(String text, String fileIdentifier) {
         LOG.infof("Generating embedding for file: %s", fileIdentifier);
         return embeddingService.generateEmbedding(text)
             .onFailure().transform(e ->
@@ -178,7 +290,7 @@ public class SyncWorker {
         delay = 15000)
     @CircuitBreakerName("vector-search")
     @Bulkhead(value = 5) // Limit concurrent requests to Vector Search
-    private Uni<Void> storeInVectorSearchWithFaultTolerance(List<Float> embedding, String file,
+    protected Uni<Void> storeInVectorSearchWithFaultTolerance(List<Float> embedding, String file,
         String taskId, String businessId, String userId) {
         // Existing implementation with improved error handling
         return Uni.createFrom().emitter(emitter -> {
@@ -209,33 +321,68 @@ public class SyncWorker {
         });
     }
 
-    private Uni<Void> storeInVectorSearchFallback(List<Float> embedding, String file,
+    protected Uni<Void> storeInVectorSearchFallback(List<Float> embedding, String file,
         String taskId, String businessId, String userId, Throwable cause) {
         LOG.warnf("Vector search storage fallback for %s: %s", file, cause.getMessage());
         // Store in a backup location or queue for retry
         return storeEmbeddingForLaterRetry(embedding, file, taskId, businessId, userId);
     }
 
-    private Uni<Void> storeEmbeddingForLaterRetry(List<Float> embedding, String file,
+    protected Uni<Void> storeEmbeddingForLaterRetry(List<Float> embedding, String file,
         String taskId, String businessId, String userId) {
         // Implementation to store the embedding for later retry
         // This could be in Firestore or another persistent store
         return Uni.createFrom().item(() -> null);
     }
 
-    private Uni<Void> recordFailedProcessing(String file, String taskId, String businessId,
+    protected Uni<Void> recordFailedProcessing(String file, String taskId, String businessId,
         String userId, String errorMessage) {
         // Record the failure in a way that allows for later retry
         // This ensures we don't lose track of failed documents
         return Uni.createFrom().item(() -> null);
     }
 
-    private Uni<String> extractText(InputStream inputStream) {
+    /**
+     * Extracts text content from various file formats using Apache Tika.
+     * Handles PDF, DOC, DOCX, ODT, RTF, TXT, and many other formats automatically.
+     * 
+     * @param inputStream The input stream of the file
+     * @return A Uni containing the extracted text content
+     */
+    protected Uni<String> extractText(InputStream inputStream) {
         return Uni.createFrom().emitter(emitter -> {
             try (inputStream) {
-                String text = new String(inputStream.readAllBytes());
-                emitter.complete(text);
+                // Create a content handler with generous write limit
+                ContentHandler handler = new BodyContentHandler(-1); // -1 means no limit
+                
+                // Create the metadata object
+                Metadata metadata = new Metadata();
+                
+                // Create the parser
+                Parser parser = new AutoDetectParser();
+                
+                // Parse the document
+                ParseContext context = new ParseContext();
+                parser.parse(inputStream, handler, metadata, context);
+                
+                // Get the extracted text
+                String extractedText = handler.toString();
+                
+                // Log metadata for debugging
+                LOG.debugf("Extracted text from %s file, size: %d characters", 
+                    metadata.get("Content-Type"), extractedText.length());
+                
+                emitter.complete(extractedText);
+            } catch (TikaException te) {
+                LOG.error("Tika parsing error", te);
+                emitter.fail(new AppException("Failed to parse document with Tika", 
+                    te, AppException.ErrorType.SYSTEM_ERROR));
+            } catch (SAXException se) {
+                LOG.error("SAX parsing error", se);
+                emitter.fail(new AppException("XML parsing error during text extraction", 
+                    se, AppException.ErrorType.SYSTEM_ERROR));
             } catch (Exception e) {
+                LOG.error("General error during text extraction", e);
                 emitter.fail(e);
             }
         });

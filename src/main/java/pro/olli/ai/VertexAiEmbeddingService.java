@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
+import pro.olli.core.metrics.Timed;
 
 public class VertexAiEmbeddingService implements EmbeddingService {
 
@@ -56,6 +57,7 @@ public class VertexAiEmbeddingService implements EmbeddingService {
     }
 
     @Override
+    @Timed(type = Timed.OperationType.AI_SERVICE)
     @Retry(maxRetries = 3,
         delay = 1000,
         jitter = 200,

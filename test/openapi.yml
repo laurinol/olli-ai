@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Olli-AI API
-  description: REST API for Olli-AI, supporting authentication and chat functionality.
+  description: REST API for Olli-AI, supporting authentication, document synchronization, and RAG-based chat functionality.
   version: 1.0.0
 servers:
   - url: http://localhost:8080
@@ -9,6 +9,186 @@ servers:
   - url: https://olli-ai-2025.appspot.com
     description: Production server (GCP App Engine)
 paths:
+  /auth/health:
+    get:
+      summary: Health Check
+      description: Checks if the application is running properly.
+      responses:
+        '200':
+          description: Application is running
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "OK"
+  
+  /auth/invite:
+    post:
+      summary: Create Business Invite
+      description: Creates an invitation for a user to join a business.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                businessId:
+                  type: string
+              required:
+                - email
+                - businessId
+      responses:
+        '200':
+          description: Invite created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Invite sent"
+        '400':
+          description: Invalid request
+        '500':
+          description: Server error
+
+  /auth/register:
+    post:
+      summary: Register User
+      description: Registers a new user with email, password, and invite token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                token:
+                  type: string
+                  description: Invite token
+              required:
+                - email
+                - password
+                - token
+      responses:
+        '200':
+          description: User registered successfully
+          headers:
+            Authorization:
+              schema:
+                type: string
+                example: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  userId:
+                    type: string
+        '400':
+          description: Invalid request
+        '409':
+          description: User already exists
+        '500':
+          description: Registration failed
+
+  /auth/login:
+    post:
+      summary: Login with Email/Password
+      description: Authenticates a user with email and password, issues JWT if valid.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+              required:
+                - email
+                - password
+      responses:
+        '200':
+          description: Login successful
+          headers:
+            Authorization:
+              schema:
+                type: string
+                example: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  userId:
+                    type: string
+        '401':
+          description: Invalid credentials
+        '500':
+          description: Login failed
+
+  /health:
+    get:
+      summary: Health Check
+      description: Checks if the application is running properly.
+      responses:
+        '200':
+          description: Application is running
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "OK"
+
+  /auth/profile:
+    get:
+      summary: Get User Profile
+      description: Retrieves the authenticated user's profile information.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+                  businessId:
+                    type: string
+                  role:
+                    type: string
+                    enum: [admin, user]
+        '401':
+          description: Unauthorized
+        '500':
+          description: Profile fetch failed
+
   /auth/google/callback:
     get:
       summary: Google OAuth Callback
@@ -17,6 +197,10 @@ paths:
         - name: code
           in: query
           required: true
+          schema:
+            type: string
+        - name: businessId
+          in: query
           schema:
             type: string
       responses:
@@ -31,8 +215,14 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  message:
+                    type: string
+                  userId:
+                    type: string
         '401':
           description: Authentication failed
+
   /auth/facebook/callback:
     get:
       summary: Facebook OAuth Callback
@@ -52,6 +242,7 @@ paths:
                 type: string
         '401':
           description: Authentication failed
+
   /auth/x/callback:
     get:
       summary: X OAuth Callback
@@ -76,6 +267,7 @@ paths:
                 type: string
         '401':
           description: Authentication failed
+
   /auth/microsoft/callback:
     get:
       summary: Microsoft OAuth Callback
@@ -95,46 +287,88 @@ paths:
                 type: string
         '401':
           description: Authentication failed
-  /auth/register:
-    post:
-      summary: Register Email/Password User
-      description: Registers a new user with email and password, stores in Firestore, and issues JWT.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/User'
+
+  /auth/sync/{provider}:
+    get:
+      summary: Request Document Sync
+      description: Initiates a synchronization task from the specified provider.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [local, s3, dropbox, google-drive, onedrive, sftp, network]
+        - name: folderId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: string
       responses:
         '200':
-          description: User registered successfully
-          headers:
-            Authorization:
+          description: Sync request accepted
+          content:
+            application/json:
               schema:
-                type: string
-        '500':
-          description: Registration failed
-  /auth/login:
-    post:
-      summary: Login with Email/Password
-      description: Authenticates a user with email and password, issues JWT if valid.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
-      responses:
-        '200':
-          description: Login successful
-          headers:
-            Authorization:
-              schema:
-                type: string
+                type: object
+                properties:
+                  taskId:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
         '401':
-          description: Invalid credentials
+          description: Unauthorized
         '500':
-          description: Login failed
+          description: Sync request failed
+
+  /auth/sync/status:
+    get:
+      summary: Check Sync Task Status
+      description: Checks the status of a synchronization task.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: taskId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [completed, failed, processing]
+                  fileCount:
+                    type: integer
+                  timestamp:
+                    type: string
+                    format: date-time
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '404':
+          description: Task not found
+        '500':
+          description: Status check failed
+
   /chat/query:
     post:
       summary: Query LLM with Prompt and History
@@ -158,6 +392,7 @@ paths:
           description: Unauthorized
         '500':
           description: Query failed
+
   /chat/history:
     get:
       summary: Get Chat History
@@ -177,6 +412,72 @@ paths:
           description: Unauthorized
         '500':
           description: History fetch failed
+
+  # Test endpoints (not available in production)
+  /test/get-latest-invite:
+    get:
+      summary: Get Latest Invite Token (Test Only)
+      description: Retrieves the latest invite token for testing purposes. Not available in production.
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invite token
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /test/check-queue-task:
+    get:
+      summary: Check Queue Task (Test Only)
+      description: Checks if a task exists in the queue. Not available in production.
+      parameters:
+        - name: taskId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Queue check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exists:
+                    type: boolean
+                  taskId:
+                    type: string
+
+  /test/process-sync-task:
+    post:
+      summary: Process Sync Task (Test Only)
+      description: Manually processes a sync task. Not available in production.
+      parameters:
+        - name: taskId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task processing result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  processed:
+                    type: boolean
+                  taskId:
+                    type: string
+
 components:
   schemas:
     User:
@@ -184,21 +485,111 @@ components:
       properties:
         email:
           type: string
+          format: email
         password:
           type: string
+          format: password
+        token:
+          type: string
+          description: Invite token (only for registration)
+        businessId:
+          type: string
+          description: Business ID (only for OAuth login)
       required:
         - email
         - password
-    LoginRequest:
+
+
+    Business:
       type: object
       properties:
-        email:
+        id:
           type: string
-        password:
+        name:
+          type: string
+        ownerId:
           type: string
       required:
+        - id
+
+    BusinessUser:
+      type: object
+      properties:
+        userId:
+          type: string
+        businessId:
+          type: string
+        role:
+          type: string
+          enum: [admin, user]
+      required:
+        - userId
+        - businessId
+        - role
+
+    Invite:
+      type: object
+      properties:
+        token:
+          type: string
+        email:
+          type: string
+        businessId:
+          type: string
+        expires:
+          type: string
+          format: date-time
+      required:
+        - token
         - email
-        - password
+        - businessId
+
+    SyncTask:
+      type: object
+      properties:
+        id:
+          type: string
+        businessId:
+          type: string
+        provider:
+          type: string
+          enum: [local, s3, dropbox, google-drive, onedrive, sftp, network]
+        folderId:
+          type: string
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - id
+        - businessId
+        - provider
+        - folderId
+        - status
+
+    SyncHistoryEntry:
+      type: object
+      properties:
+        taskId:
+          type: string
+        businessId:
+          type: string
+        status:
+          type: string
+          enum: [completed, failed, processing]
+        fileCount:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - taskId
+        - businessId
+        - status
+        - timestamp
+
     ChatRequest:
       type: object
       properties:
@@ -210,6 +601,7 @@ components:
             $ref: '#/components/schemas/ChatMessage'
       required:
         - prompt
+
     ChatResponse:
       type: object
       properties:
@@ -217,11 +609,19 @@ components:
           type: string
       required:
         - response
+
     Conversation:
       type: object
       properties:
         id:
           type: string
+        businessId:
+          type: string
+        userId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
         messages:
           type: array
           items:
@@ -229,6 +629,7 @@ components:
       required:
         - id
         - messages
+
     ChatMessage:
       type: object
       properties:
@@ -237,9 +638,13 @@ components:
           enum: [user, assistant]
         content:
           type: string
+        timestamp:
+          type: string
+          format: date-time
       required:
         - role
         - content
+
   securitySchemes:
     BearerAuth:
       type: http

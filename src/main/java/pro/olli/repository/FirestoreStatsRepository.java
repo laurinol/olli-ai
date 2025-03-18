@@ -5,9 +5,11 @@
 package pro.olli.repository;
 
 import com.google.cloud.firestore.Firestore;
+import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 
+import jakarta.inject.Inject;
 import java.util.Map;
 import java.util.Optional;
 
@@ -16,6 +18,7 @@ public class FirestoreStatsRepository implements StatsRepository {
 
     private final Firestore firestore;
 
+    @Inject
     public FirestoreStatsRepository(Firestore firestore) {
         this.firestore = firestore;
     }

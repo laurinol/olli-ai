@@ -39,13 +39,13 @@ class SyncResourceTest {
 
     @Test
     void testSyncFolderLocalNoAuthSuccess() {
-        when(syncService.sync("acme-corp", Mockito.anyString(), "local", "testfolder"))
+        when(syncService.sync("acme-corp", Mockito.anyString(), "local", "/test/test-files"))
             .thenReturn(Uni.createFrom().item("task-123"));
 
         SecurityContext ctx = Mockito.mock(SecurityContext.class);
         when(ctx.getUserPrincipal()).thenReturn(null); // No auth
 
-        Uni<Response> responseUni = syncResource.syncFolder("local", "testfolder", "acme-corp", ctx);
+        Uni<Response> responseUni = syncResource.syncFolder("local", "/test/test-files", "acme-corp", ctx);
         Response response = responseUni.await().indefinitely();
 
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
@@ -57,7 +57,7 @@ class SyncResourceTest {
         SecurityContext ctx = Mockito.mock(SecurityContext.class);
         when(ctx.getUserPrincipal()).thenReturn(null);
 
-        Uni<Response> responseUni = syncResource.syncFolder("local", "testfolder", null, ctx);
+        Uni<Response> responseUni = syncResource.syncFolder("local", "/test/test-files", null, ctx);
         Response response = responseUni.await().indefinitely();
 
         assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());

@@ -6,8 +6,9 @@ package pro.olli.service;
 import com.google.gson.Gson;
 import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
-import io.smallrye.mutiny.infrastructure.Infrastructure;
 import jakarta.enterprise.context.ApplicationScoped;
+import java.time.Instant;
+import java.util.UUID;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import pro.olli.models.SyncHistoryEntry;
 import pro.olli.models.SyncTask;
@@ -15,9 +16,6 @@ import pro.olli.queue.TaskQueueService;
 import pro.olli.repository.SyncRepository;
 import pro.olli.storage.StorageFactory;
 import pro.olli.storage.StorageProvider;
-
-import java.time.Instant;
-import java.util.UUID;
 
 import static io.quarkus.arc.ComponentsProvider.LOG;
 
@@ -61,7 +59,7 @@ public class SyncService {
             String jsonPayload = gson.toJson(taskData);
             taskQueueService.enqueueTask(taskId, jsonPayload)
                 .onItem().invoke(v -> {
-                    SyncHistoryEntry historyEntry = new SyncHistoryEntry(taskId, source, directory, Instant.now().toString(), null, 0);
+                    SyncHistoryEntry historyEntry = new SyncHistoryEntry(taskId, Instant.now(), source, directory, 0, "queued", null);
                     // Non-blocking fire-and-forget
                     syncRepository.appendSyncHistory(businessId, userId, historyEntry)
                         .invoke(() -> LOG.infof("Updated sync history for client %s, user %s", businessId, userId))

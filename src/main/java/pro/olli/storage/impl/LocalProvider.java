@@ -6,6 +6,7 @@ package pro.olli.storage.impl;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import java.io.IOException;
 import org.jboss.logging.Logger;
 import pro.olli.models.StorageCredentials;
 import pro.olli.storage.StorageProvider;
@@ -26,13 +27,22 @@ public class LocalProvider implements StorageProvider {
 
     private String basePath;
 
+    public LocalProvider() {
+        // Default to project root for testing if no credentials are provided
+        this.basePath = Paths.get("test/").toAbsolutePath().toString();
+        LOG.infof("LocalProvider initialized with default base path: %s", this.basePath);
+    }
+
     @Override
     public Uni<Boolean> authenticate(StorageCredentials credentials) {
         return Uni.createFrom().emitter(emitter -> {
             try {
-                this.basePath = (String) credentials.get("basePath");
-                if (this.basePath == null) {
-                    this.basePath = "/tmp/testfolder"; // Default for testing
+                if (credentials != null && credentials.get("basePath") != null) {
+                    this.basePath = (String) credentials.get("basePath");
+                    LOG.infof("Using provided basePath: %s", this.basePath);
+                } else {
+                    // Keep using the default set in the constructor
+                    LOG.infof("No basePath provided in credentials, keeping default: %s", basePath);
                 }
                 Path path = Paths.get(basePath);
                 if (Files.exists(path) && Files.isDirectory(path)) {
@@ -53,11 +63,34 @@ public class LocalProvider implements StorageProvider {
     public Uni<List<String>> listFiles(String directory) {
         return Uni.createFrom().emitter(emitter -> {
             try {
-                String path = directory != null ? basePath + "/" + directory : basePath;
-                List<String> files = Files.list(Paths.get(path))
+                // Handle path construction properly
+                Path dirPath;
+                if (directory == null || directory.isEmpty()) {
+                    dirPath = Paths.get(basePath);
+                } else if (directory.startsWith("/")) {
+                    // If directory starts with /, treat it as a relative path from base
+                    String relativePath = directory.substring(1); // Remove leading /
+                    dirPath = Paths.get(basePath, relativePath);
+                } else {
+                    // Normal case
+                    dirPath = Paths.get(basePath, directory);
+                }
+
+                LOG.infof("Listing files in directory: %s", dirPath);
+
+                List<String> files = Files.list(dirPath)
                     .filter(Files::isRegularFile)
+                    .filter(p -> {
+                        try {
+                            return !Files.isHidden(p);  // Exclude hidden files
+                        } catch (IOException e) {
+                            return false;
+                        }
+                    })
                     .map(p -> p.getFileName().toString())
                     .collect(Collectors.toList());
+
+                LOG.infof("Found %d files in %s", files.size(), dirPath);
                 emitter.complete(files);
             } catch (Exception e) {
                 LOG.errorf("Failed to list local files: %s", e.getMessage());
@@ -70,7 +103,16 @@ public class LocalProvider implements StorageProvider {
     public Uni<InputStream> downloadFile(String filePath) {
         return Uni.createFrom().emitter(emitter -> {
             try {
-                Path path = Paths.get(basePath, filePath);
+                Path path;
+                if (filePath.startsWith("/")) {
+                    // If filePath starts with /, treat it as a relative path from base
+                    String relativePath = filePath.substring(1); // Remove leading /
+                    path = Paths.get(basePath, relativePath);
+                } else {
+                    path = Paths.get(basePath, filePath);
+                }
+
+                LOG.infof("Downloading file: %s", path);
                 emitter.complete(new FileInputStream(path.toFile()));
             } catch (Exception e) {
                 LOG.errorf("Failed to download local file %s: %s", filePath, e.getMessage());

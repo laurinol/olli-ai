@@ -25,7 +25,7 @@ class LocalProviderTest {
     @BeforeEach
     void setUp() {
         localProvider = new LocalProvider();
-        testDir = Paths.get("test/test-files").toAbsolutePath().toString();
+        testDir = Paths.get("./test/").toAbsolutePath().toString();
     }
 
     @Test

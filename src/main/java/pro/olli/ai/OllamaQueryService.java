@@ -22,7 +22,11 @@ import org.jboss.logging.Logger;
 import java.net.URI;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import pro.olli.core.metrics.Timed;
 import pro.olli.core.resilience.exception.AppException;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Named;
 
 public class OllamaQueryService extends OllamaEmbeddingService implements QueryService {
 
@@ -37,6 +41,7 @@ public class OllamaQueryService extends OllamaEmbeddingService implements QueryS
     }
 
     @Override
+    @Timed(type = Timed.OperationType.AI_SERVICE)
     @Retry(maxRetries = 3,
         delay = 1000,
         jitter = 200,
@@ -69,7 +74,7 @@ public class OllamaQueryService extends OllamaEmbeddingService implements QueryS
                     AppException.ErrorType.EXTERNAL_SERVICE_ERROR);
             });
     }
-    
+
     public Uni<String> fallbackQuery(String prompt, List<ChatMessage> history) {
         LOG.warnf("Using fallback query generation for prompt of length: %d", prompt.length());
         return Uni.createFrom().item(() -> {

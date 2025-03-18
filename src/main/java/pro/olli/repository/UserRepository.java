@@ -5,20 +5,31 @@
 package pro.olli.repository;
 
 import io.smallrye.mutiny.Uni;
+import pro.olli.models.Business;
+import pro.olli.models.BusinessUser;
+import pro.olli.models.Invite;
+import pro.olli.models.User;
 
-import java.util.Map;
 import java.util.Optional;
 
 public interface UserRepository {
 
-    // From AuthController
-    Uni<Void> saveUser(String email, Map<String, Object> userData);
-    Uni<Void> saveInvite(String token, Map<String, Object> inviteData);
-    Uni<Optional<Map<String, Object>>> getInvite(String token);
-    Uni<Void> deleteInvite(String token);
+    // User management
+    Uni<Void> saveUser(User user);
+    Uni<Optional<User>> getUser(String email);
 
-    // For AuthResource
-    Uni<Optional<Map<String, Object>>> getBusiness(String businessId);
-    Uni<Void> saveBusiness(String businessId, Map<String, Object> businessData);
-    Uni<Void> saveBusinessUser(String businessId, String userId, Map<String, Object> userData);
+    // Invite management
+    Uni<Void> saveInvite(Invite invite);
+    Uni<Optional<Invite>> getInvite(String token);
+    Uni<Void> deleteInvite(String token);
+    Uni<Optional<Invite>> getInviteByEmail(String email);
+
+    // Business management
+    Uni<Optional<Business>> getBusiness(String businessId);
+    Uni<Void> saveBusiness(Business business);
+
+    // Business user management
+    Uni<Void> saveBusinessUser(BusinessUser businessUser);
+    Uni<Optional<BusinessUser>> getBusinessUser(String businessId, String userId);
+    Uni<Void> updateBusinessUserSyncHistory(String businessId, String userId, BusinessUser updatedUser);
 }

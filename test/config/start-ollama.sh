@@ -1,3 +1,3 @@
 #!/bin/bash
-ollama pull gpt2
+ollama pull tinyllama
 ollama serve

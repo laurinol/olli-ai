@@ -52,7 +52,7 @@ class SyncServiceTest {
         when(gson.toJson(any())).thenReturn("mocked-json-payload");
 
         // Act
-        Uni<String> taskIdUni = syncService.sync("acme-corp", "john-123", "local", "testfolder");
+        Uni<String> taskIdUni = syncService.sync("acme-corp", "john-123", "local", "/test/test-files");
         String taskId = taskIdUni.await().indefinitely();
 
         // Assert
@@ -68,7 +68,7 @@ class SyncServiceTest {
         when(storageFactory.getProvider("invalid")).thenReturn(null);
 
         // Act
-        Uni<String> taskIdUni = syncService.sync("acme-corp", "john-123", "invalid", "testfolder");
+        Uni<String> taskIdUni = syncService.sync("acme-corp", "john-123", "invalid", "/test/test-files");
         String result = taskIdUni.await().indefinitely();
 
         // Assert
@@ -90,7 +90,7 @@ class SyncServiceTest {
         when(gson.toJson(any())).thenReturn("mocked-json-payload");
 
         // Act
-        Uni<String> taskIdUni = syncService.sync("acme-corp", "john-123", "local", "testfolder");
+        Uni<String> taskIdUni = syncService.sync("acme-corp", "john-123", "local", "/test/test-files");
         String result = taskIdUni.await().indefinitely();
 
         // Assert

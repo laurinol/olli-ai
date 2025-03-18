@@ -5,29 +5,25 @@
 package pro.olli.ai;
 
 import io.quarkus.rest.client.reactive.QuarkusRestClientBuilder;
-import io.quarkus.runtime.Startup;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Named;
 import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.Path;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
+import java.net.URI;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
-import java.util.concurrent.TimeUnit;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
-
-import java.net.URI;
-import java.util.List;
+import pro.olli.core.metrics.Timed;
 import pro.olli.core.resilience.exception.AppException;
 
 public class OllamaEmbeddingService implements EmbeddingService {
@@ -37,7 +33,7 @@ public class OllamaEmbeddingService implements EmbeddingService {
     @ConfigProperty(name = "ollama.endpoint", defaultValue = "http://localhost:11434")
     protected String ollamaEndpoint;
 
-    @ConfigProperty(name = "ollama.embedding.model", defaultValue = "llama3")
+    @ConfigProperty(name = "ollama.embedding.model", defaultValue = "tinyllama")
     String ollamaModel;
 
     @ConfigProperty(name = "ollama.embedding.dimension", defaultValue = "768")
@@ -52,6 +48,7 @@ public class OllamaEmbeddingService implements EmbeddingService {
     }
 
     @Override
+    @Timed(type = Timed.OperationType.AI_SERVICE)
     @Retry(maxRetries = 3,
         delay = 1000,
         jitter = 200,
@@ -141,6 +138,7 @@ public class OllamaEmbeddingService implements EmbeddingService {
     }
 
     // For testing the health of the Ollama service
+    @Timed(value = "ollama.health.check", type = Timed.OperationType.EXTERNAL_SERVICE)
     public Uni<Boolean> healthCheck() {
         return ollamaApi.embeddings(new EmbeddingRequest(ollamaModel, "test"))
             .map(response -> response != null && response.embedding != null && !response.embedding.isEmpty())

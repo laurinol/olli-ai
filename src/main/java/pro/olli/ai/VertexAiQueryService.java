@@ -20,10 +20,14 @@ import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
 import java.time.temporal.ChronoUnit;
+import pro.olli.core.metrics.Timed;
 import pro.olli.core.resilience.exception.AppException;
 
 import java.io.IOException;
 import java.util.List;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Named;
 
 public class VertexAiQueryService extends VertexAiEmbeddingService implements QueryService {
 
@@ -37,6 +41,7 @@ public class VertexAiQueryService extends VertexAiEmbeddingService implements Qu
     }
 
     @Override
+    @Timed(type = Timed.OperationType.AI_SERVICE)
     @Retry(maxRetries = 3,
         delay = 1000,
         jitter = 200,
@@ -119,7 +124,7 @@ public class VertexAiQueryService extends VertexAiEmbeddingService implements Qu
                 AppException.ErrorType.EXTERNAL_SERVICE_ERROR);
         }
     }
-    
+
     public Uni<String> fallbackQuery(String prompt, List<ChatMessage> history) {
         LOG.warnf("Using fallback query generation for prompt of length: %d", prompt.length());
         return Uni.createFrom().item(() -> {

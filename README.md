@@ -44,7 +44,7 @@ cd olli-ai/backend
   SAMBA_PASSWORD=
   SAMBA_HOST=192.168.1.100
   SAMBA_SHARE=public
-  LOCAL_BASE_PATH=/tmp/testfolder
+  LOCAL_BASE_PATH=/test/test-files
   FIRESTORE_EMULATOR_HOST=localhost:8081  # Optional - for local dev
   ```
 - **Update `application.properties`**: In `src/main/resources/`—your `$85-$90/month` config:
@@ -115,6 +115,73 @@ mvn clean install
 - **SyncWorker**: Processes tasks—fetches user creds—syncs files—your multi-provider core—robust—efficient.
 - **Storage Providers**: Google Drive, Local, etc.—interface-driven—your app—flexible—extends easily—Samba, SFTP—your SMBs—covered.
 - **Firestore**: `clients/<businessId>/users/<userId>`—stores data, history—your `$85-$90/month` cost—optimized—scalable.
+
+## Monitoring and Metrics
+
+Olli AI includes comprehensive monitoring and metrics to ensure system health and identify performance bottlenecks:
+
+### Available Metrics
+- **API Performance**: Track request duration, response codes, and throughput—identify slow endpoints.
+- **Database Operations**: Monitor Firestore read/write times, error rates—optimize queries.
+- **Storage Operations**: Track file sync times across providers—Google Drive, S3, SFTP, etc.
+- **AI Service Performance**: Monitor embedding generation time—detect Vertex AI slowdowns.
+- **Circuit Breaker States**: Track when services degrade—automatic fault detection.
+- **Sync Task Processing**: Monitor files processed, processing rates, and timing—track your 39,000-doc pipeline.
+
+### Monitoring Endpoints
+- **Health Checks**: `/health/live` and `/health/ready`—Kubernetes-compatible health status.
+- **Prometheus Metrics**: `/q/metrics`—standard Prometheus endpoint—all metrics exposed.
+- **Health UI**: `/health-ui`—visual dashboard of system health—dev environment.
+
+### Setting Up Alerts
+1. **Prometheus Configuration**: 
+   ```yaml
+   scrape_configs:
+     - job_name: 'olli-backend'
+       metrics_path: '/q/metrics'
+       static_configs:
+         - targets: ['olli-backend:8080']
+   ```
+
+2. **Sample Alert Rules**:
+   ```yaml
+   groups:
+   - name: olli-alerts
+     rules:
+     - alert: ApiHighLatency
+       expr: api_request_duration_seconds{endpoint="/auth/sync/{source}"} > 2
+       for: 5m
+       labels:
+         severity: warning
+       annotations:
+         summary: "API high latency detected"
+         description: "Endpoint {{ $labels.endpoint }} is experiencing high latency ({{ $value }}s)"
+
+     - alert: CircuitBreakerOpen
+       expr: circuit_breaker_open > 0
+       for: 1m
+       labels:
+         severity: critical
+       annotations:
+         summary: "Circuit breaker open"
+         description: "Circuit breaker {{ $labels.name }} is in OPEN state"
+   ```
+
+3. **Integration Options**:
+   - **GCP**: Export to Cloud Monitoring—use built-in Prometheus integration.
+   - **AWS**: CloudWatch integration—send metrics directly or via Prometheus.
+   - **Azure**: Azure Monitor integration—compatible with Prometheus metrics.
+   - **On-Prem**: Prometheus + Grafana—standard monitoring stack—vendor-agnostic.
+
+### Using the @Timed Annotation
+Add performance metrics to your methods with the `@Timed` annotation:
+
+```java
+@Timed(type = OperationType.DATABASE)
+public Uni<Optional<User>> getUser(String email) {
+    // Method implementation
+}
+```
 
 ## Contributing
 - **Issues**: Report bugs—suggest features—your feedback—shapes your `$99/month` app—GitHub Issues.

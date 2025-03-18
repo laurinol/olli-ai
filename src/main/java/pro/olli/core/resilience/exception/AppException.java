@@ -5,6 +5,7 @@
 package pro.olli.core.resilience.exception;
 
 public class AppException extends RuntimeException {
+
     private final ErrorType errorType;
 
     public enum ErrorType {
@@ -14,7 +15,8 @@ public class AppException extends RuntimeException {
         RESOURCE_ERROR(false),      // Missing resources
         VALIDATION_ERROR(false),    // Invalid input
         SYSTEM_ERROR(true),         // Internal server errors
-        EXTERNAL_SERVICE_ERROR(true); // Third-party service failures
+        EXTERNAL_SERVICE_ERROR(true), // Third-party service failures
+        DATA_ACCESS_ERROR(true);     // Data access errors
 
         private final boolean retryable;
 
