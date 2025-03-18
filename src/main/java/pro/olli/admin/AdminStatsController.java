@@ -16,6 +16,7 @@ import jakarta.ws.rs.core.MediaType;
 import java.util.Optional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
+import pro.olli.repository.Factory;
 import pro.olli.repository.StatsRepository;
 
 import java.io.IOException;
@@ -64,7 +65,7 @@ public class AdminStatsController {
     @ConfigProperty(name = "gcp.queue-id", defaultValue = "chat-requests")
     String queueId;
 
-    public AdminStatsController(StatsRepository statsRepository, CloudTasksClient cloudTasksClient) {
+    public AdminStatsController(@Factory StatsRepository statsRepository, CloudTasksClient cloudTasksClient) {
         this.statsRepository = statsRepository;
         this.cloudTasksClient = cloudTasksClient;
     }

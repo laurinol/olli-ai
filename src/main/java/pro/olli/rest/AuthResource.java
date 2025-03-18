@@ -16,7 +16,9 @@ import jakarta.ws.rs.core.SecurityContext;
 import org.jboss.logging.Logger;
 import pro.olli.models.Business;
 import pro.olli.models.BusinessUser;
+import pro.olli.models.SyncHistoryEntry;
 import pro.olli.models.User;
+import pro.olli.repository.Factory;
 import pro.olli.repository.UserRepository;
 
 import java.security.Principal;
@@ -32,7 +34,7 @@ public class AuthResource {
     private final UserRepository userRepository;
     private final SecurityContext securityContext;
 
-    public AuthResource(UserRepository userRepository, SecurityContext securityContext) {
+    public AuthResource(@Factory UserRepository userRepository, SecurityContext securityContext) {
         this.userRepository = userRepository;
         this.securityContext = securityContext;
     }
@@ -57,35 +59,78 @@ public class AuthResource {
                 if ("dev".equals(System.getProperty("quarkus.profile", "prod"))) {
                     String testEmail = System.getProperty("test.email", "test@example.com");
                     String testBusinessId = System.getProperty("test.businessId", "test-business");
+                    String testUserId = System.getProperty("test.userId", "user-test123");
+                    
                     Map<String, Object> userData = new HashMap<>();
+                    userData.put("userId", testUserId);
                     userData.put("email", testEmail);
                     userData.put("businessId", testBusinessId);
                     userData.put("role", "admin");
                     userData.put("dev", true);
+                    
+                    LOG.infof("Returning test profile data in dev mode: %s", userData);
                     emitter.complete(Response.ok(userData).build());
                     return;
                 }
+                
                 LOG.error("No authenticated user in profile request");
                 emitter.complete(Response.status(Response.Status.UNAUTHORIZED).build());
                 return;
             }
 
             String userId = principal.getName();
+            LOG.infof("Getting profile for authenticated user: %s", userId);
+            
             userRepository.getUser(userId)
                 .flatMap(userOpt -> {
                     if (userOpt.isEmpty()) {
+                        LOG.warnf("Profile request failed - user not found: %s", userId);
                         return Uni.createFrom().item(
                             Response.status(Response.Status.NOT_FOUND)
                                 .entity(Map.of("error", "User not found"))
                                 .build()
                         );
                     }
+                    
                     User user = userOpt.get();
-                    Map<String, Object> userData = new HashMap<>(user.getMetadata());
+                    LOG.debugf("Found user for profile: id=%s, email=%s", user.getId(), user.getEmail());
+                    
+                    // Ensure metadata exists and is not null
+                    Map<String, Object> userData = new HashMap<>();
                     userData.put("userId", user.getId());
                     userData.put("email", user.getEmail());
                     
-                    return Uni.createFrom().item(Response.ok(userData).build());
+                    if (user.getMetadata() != null) {
+                        userData.putAll(user.getMetadata());
+                    }
+                    
+                    // Get the business ID from metadata
+                    String businessId = (String) userData.get("businessId");
+                    
+                    if (businessId == null) {
+                        LOG.warnf("User %s has no business ID in metadata", user.getId());
+                        return Uni.createFrom().item(Response.ok(userData).build());
+                    }
+                    
+                    // Get the business user record to append role info
+                    return userRepository.getBusinessUser(businessId, user.getId())
+                        .map(businessUserOpt -> {
+                            if (businessUserOpt.isPresent()) {
+                                BusinessUser businessUser = businessUserOpt.get();
+                                userData.put("role", businessUser.getRole());
+                                userData.put("businessName", businessUser.getBusinessId()); // TODO: Get actual business name
+                                
+                                if (businessUser.getSyncHistory() != null) {
+                                    userData.put("syncHistory", businessUser.getSyncHistory());
+                                }
+                                
+                                LOG.debugf("Added business user data: role=%s", businessUser.getRole());
+                            } else {
+                                LOG.warnf("No business user record found for user %s in business %s", user.getId(), businessId);
+                            }
+                            
+                            return Response.ok(userData).build();
+                        });
                 })
                 .subscribe().with(
                     emitter::complete,

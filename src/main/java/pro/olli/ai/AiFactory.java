@@ -8,6 +8,10 @@ import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import pro.olli.ai.ollama.OllamaEmbeddingService;
+import pro.olli.ai.ollama.OllamaQueryService;
+import pro.olli.ai.vertexai.VertexAiEmbeddingService;
+import pro.olli.ai.vertexai.VertexAiQueryService;
 
 @ApplicationScoped
 @Startup

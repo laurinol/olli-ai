@@ -14,6 +14,7 @@ import com.google.gson.Gson;
 import io.quarkus.runtime.Startup;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
+import pro.olli.service.BillingService;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -67,33 +68,47 @@ public class SyncWorker {
     @ConfigProperty(name = "worker.backoff.multiplier", defaultValue = "1.5")
     double backoffMultiplier;
 
+    @ConfigProperty(name = "app.worker.multiplier", defaultValue = "4")
+    int workerMultiplier;
+
     private final StorageFactory storageFactory;
     private final EmbeddingService embeddingService;  // @Named("ollamaEmbedding") would fix injection
     private final TaskQueueService taskQueueService;
+    private final BillingService billingService;
     private final IndexServiceClient indexServiceClient;
     private final ExecutorService executorService;
     private final Gson gson;
+    private final int workerCount = Math.max(1, Runtime.getRuntime().availableProcessors() * workerMultiplier);
 
     @Inject
-    public SyncWorker(StorageFactory storageFactory, EmbeddingService embeddingService,
-        TaskQueueService taskQueueService, IndexServiceClient indexServiceClient) {
+    public SyncWorker(StorageFactory storageFactory,
+                     EmbeddingService embeddingService,
+                     TaskQueueService taskQueueService,
+                     BillingService billingService,
+                     IndexServiceClient indexServiceClient) {
         this.storageFactory = storageFactory;
         this.embeddingService = embeddingService;
         this.taskQueueService = taskQueueService;
+        this.billingService = billingService;
         this.indexServiceClient = indexServiceClient;
         this.gson = new Gson();
         this.executorService = Executors.newFixedThreadPool(
-            Runtime.getRuntime().availableProcessors(), // TODO: Adjust via config if needed
+            workerCount,
             new ThreadFactoryBuilder().setNameFormat("sync-worker-%d").build()
         );
     }
 
     @PostConstruct
     public void startConsuming() {
-        LOG.info("SyncWorker is initializing...");
-        int workerCount = 2; // Runtime.getRuntime().availableProcessors(); // TODO: Configurable
-        for (int i = 1; i < workerCount+1; i++) {
-            executorService.submit(this::consumeTasks);
+        LOG.info("SyncWorker is initializing with " + workerCount + " worker threads...");
+        try {
+            // Use a simple loop from 0 to workerCount to submit tasks
+            for (int i = 0; i < workerCount; i++) {
+                executorService.submit(this::consumeTasks);
+            }
+        } catch (Exception e) {
+            LOG.errorf("Unable to start %d SyncWorker threads: %s", workerCount, e.getMessage());
+            throw new RuntimeException(e);
         }
         LOG.infof("Started %d SyncWorker threads for reading tasks from the queue", workerCount);
         LOG.info("SyncWorker initialization complete - ready to process tasks");
@@ -175,6 +190,22 @@ public class SyncWorker {
                 LOG.infof("Processing sync task %s for client %s, user %s, source %s, folder %s",
                     taskId, businessId, userId, source, folderId);
                 provider.listFiles(folderId)
+                    .flatMap(files -> {
+                        // Check if business has quota for processing these files
+                        return billingService.checkBusinessLimits(businessId)
+                            .onItem().transformToUni(business -> {
+                                // Check if business is over document limit
+                                if (business.isDocumentLimitExceeded()) {
+                                    LOG.warnf("Business %s has exceeded document limit, skipping sync", businessId);
+                                    return Uni.createFrom().failure(
+                                        new IllegalStateException("Document processing limit exceeded"));
+                                }
+
+                                // Record document processing in billing
+                                return billingService.recordDocumentProcessing(businessId, files.size())
+                                    .map(v -> files);
+                            });
+                    })
                     .flatMap(files -> Uni.createFrom().item(files)
                         .map(fileList -> fileList.stream()
                             .map(file -> processFile(provider, folderId + "/" + file, taskId, businessId, userId))
@@ -182,7 +213,16 @@ public class SyncWorker {
                         .flatMap(unis -> Uni.combine().all().unis(unis).combinedWith(results -> null)))
                     .subscribe().with(
                         results -> emitter.complete(null),
-                        emitter::fail
+                        error -> {
+                            if (error instanceof IllegalStateException &&
+                                error.getMessage().contains("limit exceeded")) {
+                                // This is a soft error - complete the task but log it
+                                LOG.warnf("Task %s completed with limit warning: %s", taskId, error.getMessage());
+                                emitter.complete(null);
+                            } else {
+                                emitter.fail(error);
+                            }
+                        }
                     );
             } catch (Exception e) {
                 String errorMsg = "Failed to parse or process task data";
@@ -206,12 +246,12 @@ public class SyncWorker {
             .map(text -> {
                 String fileExt = getFileExtension(file);
                 String fileType = mapFileExtensionToType(fileExt);
-                
+
                 // Add metadata header to the text to provide context to the embedding
                 String metadataPrefix = String.format(
-                    "File: %s\nType: %s\nBusiness: %s\n\nContent:\n", 
+                    "File: %s\nType: %s\nBusiness: %s\n\nContent:\n",
                     file, fileType, businessId);
-                
+
                 return metadataPrefix + text;
             })
             // Generate embedding from the text with metadata
@@ -225,7 +265,7 @@ public class SyncWorker {
                 return new AppException("Failed to process file: " + file, e, AppException.ErrorType.SYSTEM_ERROR);
             });
     }
-    
+
     /**
      * Gets the file extension from a filename
      */
@@ -236,7 +276,7 @@ public class SyncWorker {
         }
         return "";
     }
-    
+
     /**
      * Maps file extensions to more user-friendly type descriptions
      */
@@ -345,7 +385,7 @@ public class SyncWorker {
     /**
      * Extracts text content from various file formats using Apache Tika.
      * Handles PDF, DOC, DOCX, ODT, RTF, TXT, and many other formats automatically.
-     * 
+     *
      * @param inputStream The input stream of the file
      * @return A Uni containing the extracted text content
      */
@@ -354,32 +394,32 @@ public class SyncWorker {
             try (inputStream) {
                 // Create a content handler with generous write limit
                 ContentHandler handler = new BodyContentHandler(-1); // -1 means no limit
-                
+
                 // Create the metadata object
                 Metadata metadata = new Metadata();
-                
+
                 // Create the parser
                 Parser parser = new AutoDetectParser();
-                
+
                 // Parse the document
                 ParseContext context = new ParseContext();
                 parser.parse(inputStream, handler, metadata, context);
-                
+
                 // Get the extracted text
                 String extractedText = handler.toString();
-                
+
                 // Log metadata for debugging
-                LOG.debugf("Extracted text from %s file, size: %d characters", 
+                LOG.debugf("Extracted text from %s file, size: %d characters",
                     metadata.get("Content-Type"), extractedText.length());
-                
+
                 emitter.complete(extractedText);
             } catch (TikaException te) {
                 LOG.error("Tika parsing error", te);
-                emitter.fail(new AppException("Failed to parse document with Tika", 
+                emitter.fail(new AppException("Failed to parse document with Tika",
                     te, AppException.ErrorType.SYSTEM_ERROR));
             } catch (SAXException se) {
                 LOG.error("SAX parsing error", se);
-                emitter.fail(new AppException("XML parsing error during text extraction", 
+                emitter.fail(new AppException("XML parsing error during text extraction",
                     se, AppException.ErrorType.SYSTEM_ERROR));
             } catch (Exception e) {
                 LOG.error("General error during text extraction", e);

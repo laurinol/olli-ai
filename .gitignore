@@ -39,3 +39,8 @@ build/
 
 ### Other ###
 .env
+/logs/
+/test/firestore/
+/test/minio-data/
+/test/mongodb-data/
+/test/ollama/

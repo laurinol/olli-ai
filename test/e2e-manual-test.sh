@@ -2,6 +2,14 @@
 # End-to-End Manual Test Script for Olli AI
 # This script will guide you through testing the complete flow of the application
 
+# Set MongoDB as the database provider
+export DATABASE_PROVIDER=mongodb
+export MONGODB_CONNECTION_STRING=mongodb://admin:password@localhost:27017
+export MONGODB_DATABASE=olli
+
+# Ensure MongoDB is running
+docker-compose -f test/docker-compose.yml up -d mongodb
+
 # Configuration
 BASE_URL="http://localhost:8080"
 TEST_EMAIL="test@example.com"
@@ -106,10 +114,11 @@ print_response_data "Invite Response" "$invite_result"
 
 # Step 3: Get the invite token
 section "3. RETRIEVING INVITE TOKEN"
-token_result=$(run_command "curl -s ${BASE_URL}/test/get-latest-invite?email=${TEST_EMAIL}" "Getting invite token")
+token_result=$(run_command "curl -s ${BASE_URL}/test-integration/get-latest-invite?email=${TEST_EMAIL}" "Getting invite token")
 print_response_data "Token Response" "$token_result"
 
-invite_token=$(echo "$token_result" | tr -d '\n')
+# Capture the plain token from the output without the run_command formatting
+invite_token=$(echo "$token_result" | grep -v ">" | grep -v "SUCCESS" | grep -v "FAILED" | grep -v "^$" | head -1)
 
 if [ -z "$invite_token" ]; then
   echo -e "${RED}ERROR: Could not retrieve invite token.${NC}"
@@ -123,27 +132,21 @@ section "4. REGISTERING USER"
 register_result=$(run_command "curl -v -s -X POST -H \"Content-Type: application/json\" -d '{\"email\":\"${TEST_EMAIL}\", \"password\":\"${TEST_PASSWORD}\", \"token\":\"${invite_token}\"}' ${BASE_URL}/auth/register 2>&1" "Registering with token")
 print_response_data "Registration Response" "$register_result"
 
-# Extract the auth token from the header (using the -v verbose output from curl)
-auth_token=$(echo "$register_result" | grep -i "< authorization:" | head -n 1 | awk '{print $3}' | sed 's/Bearer //')
+# Try to extract the token from JSON response
+auth_token=$(echo "$register_result" | grep -o '"token":"[^"]*"' | head -1 | sed 's/"token":"\([^"]*\)"/\1/')
 
 if [ -z "$auth_token" ]; then
-  # Try parsing from response body if it's there
-  auth_token=$(echo "$register_result" | grep -o '"token":[[:space:]]*"[^"]*"' | sed 's/"token":[[:space:]]*"\([^"]*\)"/\1/')
+  # Try parsing from header if it's there
+  auth_token=$(echo "$register_result" | grep -i 'authorization:' | head -n 1 | sed 's/.*Bearer //')
 fi
 
 if [ -z "$auth_token" ]; then
-  # Fallback: For testing purposes, generate a fake token
+  # Fallback: Use a test token for the E2E flow
   echo -e "${YELLOW}WARNING: Could not extract auth token from response. Using a test token.${NC}"
   auth_token="test-token-$(date +%s)"
 fi
 
-if [ -z "$auth_token" ]; then
-  echo -e "${RED}ERROR: Failed to extract auth token from response.${NC}"
-  echo -e "${YELLOW}Continuing without auth token. Some steps may fail.${NC}"
-  auth_token="MISSING_TOKEN"
-else
-  echo -e "Auth token: ${GREEN}$auth_token${NC}"
-fi
+echo -e "Auth token: ${GREEN}$auth_token${NC}"
 
 # Step 5: Verify the business was created
 section "5. VERIFYING BUSINESS CREATION"
@@ -180,12 +183,12 @@ fi
 
 # Step 7: Verify task was added to queue
 section "7. VERIFYING TASK IN QUEUE"
-queue_result=$(run_command "curl -s \"${BASE_URL}/test/check-queue-task?taskId=${task_id}\"" "Checking if task is in queue")
+queue_result=$(run_command "curl -s \"${BASE_URL}/test-integration/check-queue-task?taskId=${task_id}\"" "Checking if task is in queue")
 print_response_data "Queue Check Response" "$queue_result"
 
 # Step 8: Process the task
 section "8. PROCESSING SYNC TASK"
-process_result=$(run_command "curl -s -X POST \"${BASE_URL}/test/process-sync-task?taskId=${task_id}\"" "Processing sync task")
+process_result=$(run_command "curl -s -X POST \"${BASE_URL}/test-integration/process-sync-task?taskId=${task_id}\"" "Processing sync task")
 print_response_data "Process Task Response" "$process_result"
 
 # Add delay to allow processing

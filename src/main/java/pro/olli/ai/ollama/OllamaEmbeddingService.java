@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
 
-package pro.olli.ai;
+package pro.olli.ai.ollama;
 
 import io.quarkus.rest.client.reactive.QuarkusRestClientBuilder;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
@@ -23,6 +23,7 @@ import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
+import pro.olli.ai.EmbeddingService;
 import pro.olli.core.metrics.Timed;
 import pro.olli.core.resilience.exception.AppException;
 

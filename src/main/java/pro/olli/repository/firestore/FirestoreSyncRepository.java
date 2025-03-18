@@ -2,14 +2,14 @@
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
 
-package pro.olli.repository;
+package pro.olli.repository.firestore;
 
 import com.google.cloud.firestore.FieldValue;
 import com.google.cloud.firestore.Firestore;
-import io.quarkus.runtime.Startup;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Named;
 import jakarta.inject.Inject;
 import java.time.temporal.ChronoUnit;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
@@ -20,8 +20,10 @@ import org.jboss.logging.Logger;
 import java.util.Map;
 import pro.olli.core.resilience.exception.AppException;
 import pro.olli.models.SyncHistoryEntry;
+import pro.olli.repository.SyncRepository;
 
 @ApplicationScoped
+@Named("firestore-sync")
 public class FirestoreSyncRepository implements SyncRepository {
 
     private static final Logger LOG = Logger.getLogger(FirestoreSyncRepository.class);

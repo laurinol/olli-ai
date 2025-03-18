@@ -2,13 +2,11 @@
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
 
-package pro.olli.ai;
+package pro.olli.ai.vertexai;
 
 import com.google.cloud.aiplatform.v1.EndpointName;
 import com.google.cloud.aiplatform.v1.PredictRequest;
 import com.google.cloud.aiplatform.v1.PredictResponse;
-import com.google.cloud.aiplatform.v1.PredictionServiceClient;
-import com.google.cloud.aiplatform.v1.PredictionServiceSettings;
 import com.google.protobuf.Value;
 import com.google.protobuf.util.JsonFormat;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
@@ -20,14 +18,13 @@ import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
 import java.time.temporal.ChronoUnit;
+import pro.olli.ai.ChatMessage;
+import pro.olli.ai.QueryService;
 import pro.olli.core.metrics.Timed;
 import pro.olli.core.resilience.exception.AppException;
 
 import java.io.IOException;
 import java.util.List;
-
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Named;
 
 public class VertexAiQueryService extends VertexAiEmbeddingService implements QueryService {
 

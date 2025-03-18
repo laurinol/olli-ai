@@ -3,6 +3,8 @@
  */
 package pro.olli.core.logging;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -19,6 +21,7 @@ import java.util.UUID;
 public class StructuredLogger {
 
     private static final String TRACE_ID = "traceId";
+    private static final String SPAN_ID = "spanId";
     private static final String BUSINESS_ID = "businessId";
     private static final String USER_ID = "userId";
     
@@ -35,8 +38,17 @@ public class StructuredLogger {
      * @return The generated trace ID
      */
     public String startContext() {
-        String traceId = generateTraceId();
+        // Get current span from OpenTelemetry context
+        Span currentSpan = Span.current();
+        SpanContext spanContext = currentSpan.getSpanContext();
+        
+        String traceId = spanContext.isValid() ? 
+            spanContext.getTraceId() : generateTraceId();
+        String spanId = spanContext.isValid() ?
+            spanContext.getSpanId() : generateTraceId();
+            
         MDC.put(TRACE_ID, traceId);
+        MDC.put(SPAN_ID, spanId);
         return traceId;
     }
     
@@ -48,10 +60,26 @@ public class StructuredLogger {
      * @return The generated trace ID
      */
     public String startContext(String businessId, String userId) {
-        String traceId = generateTraceId();
+        // Get current span from OpenTelemetry context
+        Span currentSpan = Span.current();
+        SpanContext spanContext = currentSpan.getSpanContext();
+        
+        String traceId = spanContext.isValid() ? 
+            spanContext.getTraceId() : generateTraceId();
+        String spanId = spanContext.isValid() ?
+            spanContext.getSpanId() : generateTraceId();
+            
         MDC.put(TRACE_ID, traceId);
+        MDC.put(SPAN_ID, spanId);
         MDC.put(BUSINESS_ID, businessId);
         MDC.put(USER_ID, userId);
+        
+        // Add business/user IDs as attributes to the current span for better context
+        if (spanContext.isValid()) {
+            currentSpan.setAttribute("business.id", businessId);
+            currentSpan.setAttribute("user.id", userId);
+        }
+        
         return traceId;
     }
     

@@ -4,6 +4,7 @@
 package pro.olli.integration;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.TestProfile;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,8 +28,8 @@ import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-// Switch to TestProfile to disable need for full app load
-// @QuarkusTest
+@QuarkusTest
+@TestProfile(E2ETestProfile.class)
 public class EndToEndIntegrationTest {
 
     private static final String TEST_EMAIL = "test@example.com";
@@ -70,7 +71,7 @@ public class EndToEndIntegrationTest {
         registrationToken = given()
             .queryParam("email", TEST_EMAIL)
             .when()
-            .get("/test/get-latest-invite")
+            .get("/test-integration/get-latest-invite")
             .then()
             .statusCode(200)
             .extract()
@@ -140,7 +141,7 @@ public class EndToEndIntegrationTest {
         given()
             .queryParam("taskId", syncTaskId)
             .when()
-            .get("/test/check-queue-task")
+            .get("/test-integration/check-queue-task")
             .then()
             .statusCode(200)
             .body("exists", is(true))
@@ -157,7 +158,7 @@ public class EndToEndIntegrationTest {
         given()
             .queryParam("taskId", syncTaskId)
             .when()
-            .post("/test/process-sync-task")
+            .post("/test-integration/process-sync-task")
             .then()
             .statusCode(200)
             .body("processed", is(true));

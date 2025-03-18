@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
 
-package pro.olli.ai;
+package pro.olli.ai.ollama;
 
 import io.quarkus.rest.client.reactive.QuarkusRestClientBuilder;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
@@ -12,7 +12,6 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.core.MediaType;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
@@ -22,11 +21,10 @@ import org.jboss.logging.Logger;
 import java.net.URI;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import pro.olli.ai.ChatMessage;
+import pro.olli.ai.QueryService;
 import pro.olli.core.metrics.Timed;
 import pro.olli.core.resilience.exception.AppException;
-
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Named;
 
 public class OllamaQueryService extends OllamaEmbeddingService implements QueryService {
 

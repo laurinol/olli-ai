@@ -1,25 +1,45 @@
 services:
-  firestore:
-    image: google/cloud-sdk
-    container_name: firestore
-    command: gcloud emulators firestore start --host-port=0.0.0.0:8081
-    ports: [ "8081:8080" ]  # Expose the REST port as 8081
-  #firebase:
-  #  image: voraciousdev/firebase-tools
-  #  container_name: firebase
-  #  environment:
-  #    - FIREBASE_PROJECT_ID=oll-ai-dev
-  #    - FIREBASE_TOKEN=1//068JU-3UYUsxDCgYIARAAGAYSNwF-L9IreRBohSSM9uetNw82RNOA9o2eRO_P5xQk1bgqF6VP5RuTfGTDbDebgPBLTMkYqmh56JQ
-  #  ports:
-  #    - "4000:4000"  # UI port
-  #    - "8080:8080"  # Firestore emulator port
-  #    - "9099:9099"  # auth
+  # Database options - use either Firestore or MongoDB
+  #firestore:
+  #  image: google/cloud-sdk
+  #  container_name: firestore
+  #  command: gcloud emulators firestore start --host-port=0.0.0.0:8081
+  #  ports: [ "8081:8080" ]  # Expose the REST port as 8081
+
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
+    volumes:
+      - ./mongodb-data:/data/db
+
+  # Jaeger - Distributed Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686" # UI port
+      - "14250:14250" # Model port
+      - "14268:14268"
+      - "14269:14269"
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
   rabbitmq:
     image: rabbitmq:management
     container_name: queue
     environment:
       - RABBITMQ_DEFAULT_USER=admin
-      - RABBITMQ_DEFAULT_PASS=pass1234
+      - RABBITMQ_DEFAULT_PASS=pass123
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -35,15 +55,15 @@ services:
       - OLLAMA_KEEP_ALIVE=24h
       - OLLAMA_HOST=0.0.0.0
     ports: [ "11434:11434" ]
-  ollama-webui:
-    image: ghcr.io/open-webui/open-webui:ollama
-    ports:
-      - "3000:8080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ./ollama/ollama-webui:/app/backend/data
-    restart: always
+  #ollama-webui:
+  #  image: ghcr.io/open-webui/open-webui:ollama
+  #  ports:
+  #    - "3000:8080"
+  #  extra_hosts:
+  #    - "host.docker.internal:host-gateway"
+  #  volumes:
+  #    - ./ollama/ollama-webui:/app/backend/data
+  #  restart: always
   minio:
     image: minio/minio
     container_name: s3-store
@@ -53,7 +73,7 @@ services:
       - "9001:9001"  # Console
     environment:
       - MINIO_ROOT_USER=admin
-      - MINIO_ROOT_PASSWORD=pass1234
+      - MINIO_ROOT_PASSWORD=pass123
     volumes:
       - ./minio-data:/data
   sftp:

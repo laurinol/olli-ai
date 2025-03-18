@@ -42,17 +42,31 @@ public class RabbitMqTaskService implements TaskQueueService {
 
     private void connect() {
         try {
+            LOG.infof("Attempting to connect to RabbitMQ at %s:%d with username '%s' and password '%s'", 
+                     host, port, username, password);
+            
             ConnectionFactory factory = new ConnectionFactory();
             factory.setHost(host);
             factory.setPort(port);
             factory.setUsername(username);
             factory.setPassword(password);
+            
+            LOG.infof("Created ConnectionFactory, attempting to open connection...");
             this.connection = factory.newConnection();
+            LOG.infof("RabbitMQ connection established successfully");
+            
             this.channel = connection.createChannel();
+            LOG.infof("RabbitMQ channel created successfully");
+            
             channel.queueDeclare(queue, true, false, false, null);
-            LOG.infof("RabbitMQ connection initialized at %s:%d, ($s)", host, port, queue);
+            LOG.infof("RabbitMQ queue '%s' declared/confirmed", queue);
+            
+            LOG.infof("RabbitMQ connection fully initialized at %s:%d, queue: %s", host, port, queue);
         } catch (IOException | TimeoutException e) {
             LOG.errorf("Failed to initialize RabbitMQ: %s", e.getMessage());
+            LOG.errorf("Connection details - host: %s, port: %d, username: %s, queue: %s", 
+                      host, port, username, queue);
+            e.printStackTrace(); // Print full stack trace for debugging
             throw new RuntimeException("RabbitMQ init failed", e);
         }
     }

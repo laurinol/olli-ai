@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
 
-package pro.olli.ai;
+package pro.olli.ai.vertexai;
 
 import com.google.cloud.aiplatform.v1.EndpointName;
 import com.google.cloud.aiplatform.v1.PredictRequest;
@@ -11,12 +11,9 @@ import com.google.cloud.aiplatform.v1.PredictionServiceClient;
 import com.google.cloud.aiplatform.v1.PredictionServiceSettings;
 import com.google.protobuf.Value;
 import com.google.protobuf.util.JsonFormat;
-import io.quarkus.runtime.Startup;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
-import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.inject.Named;
 import java.util.Random;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
@@ -29,6 +26,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
+import pro.olli.ai.EmbeddingService;
 import pro.olli.core.metrics.Timed;
 
 public class VertexAiEmbeddingService implements EmbeddingService {

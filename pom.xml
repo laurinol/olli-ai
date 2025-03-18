@@ -33,6 +33,11 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-arc</artifactId>
     </dependency>
+    <!-- Quarkus Scheduler -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-scheduler</artifactId>
+    </dependency>
     <!-- REST -->
     <dependency>
       <groupId>io.quarkus</groupId>
@@ -66,6 +71,12 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-smallrye-context-propagation</artifactId>
     </dependency>
+    <!-- Logging bridge -->
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-to-slf4j</artifactId>
+      <version>2.23.0</version>
+    </dependency>
     <!-- Fault Tolerance -->
     <dependency>
       <groupId>io.quarkus</groupId>
@@ -82,7 +93,20 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
     </dependency>
-    <!-- Google Drive API -->
+    <!-- OpenTelemetry for distributed tracing -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-opentelemetry</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-opentelemetry-exporter-otlp</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkiverse.opentelemetry.exporter</groupId>
+      <artifactId>quarkus-opentelemetry-exporter-jaeger</artifactId>
+      <version>2.0.0.Final</version>
+    </dependency><!-- Google Drive API -->
     <dependency>
       <groupId>com.google.apis</groupId>
       <artifactId>google-api-services-drive</artifactId>
@@ -164,11 +188,21 @@
       <version>3.12.2</version>
       <scope>test</scope>
     </dependency>
-    <!-- Firestore -->
+    <!-- Database - Firestore -->
     <dependency>
       <groupId>io.quarkiverse.googlecloudservices</groupId>
       <artifactId>quarkus-google-cloud-firestore</artifactId>
       <version>2.14.0</version>
+    </dependency>
+
+    <!-- Database - MongoDB -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-mongodb-client</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-mongodb-panache</artifactId>
     </dependency>
     <!-- Samba support -->
     <dependency>
@@ -259,6 +293,31 @@
                 </configuration>
               </execution>
             </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    
+    <profile>
+      <id>e2e</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <version>3.2.5</version>
+            <configuration>
+              <systemPropertyVariables>
+                <database.provider>mongodb</database.provider>
+                <quarkus.mongodb.connection-string>mongodb://admin:password@localhost:27017</quarkus.mongodb.connection-string>
+                <quarkus.mongodb.database>olli_test</quarkus.mongodb.database>
+                <queue.provider>rabbitmq</queue.provider>
+                <ai.provider>ollama</ai.provider>
+              </systemPropertyVariables>
+              <includes>
+                <include>**/EndToEndIntegrationTest.java</include>
+              </includes>
+            </configuration>
           </plugin>
         </plugins>
       </build>

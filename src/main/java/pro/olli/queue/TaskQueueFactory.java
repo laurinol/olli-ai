@@ -32,7 +32,7 @@ public class TaskQueueFactory {
     @ConfigProperty(name = "rabbitmq.username", defaultValue = "admin")
     String username;
 
-    @ConfigProperty(name = "rabbitmq.password", defaultValue = "pass1234")
+    @ConfigProperty(name = "rabbitmq.password", defaultValue = "pass123")
     String password;
 
     public TaskQueueFactory(CloudTasksClient cloudTasksClient) {

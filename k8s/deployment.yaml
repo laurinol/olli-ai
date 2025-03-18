@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: olli-backend
+  namespace: olli-ai
+  labels:
+    app: olli-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: olli-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: olli-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/q/metrics"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+      - name: olli-backend
+        image: gcr.io/olli-ai/backend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: QUARKUS_PROFILE
+          value: prod
+        - name: ENV
+          value: prod
+        # Reference secrets for external services
+        - name: QUARKUS_GOOGLE_CLOUD_PROJECT_ID
+          valueFrom:
+            secretKeyRef:
+              name: olli-backend-config
+              key: project-id
+        - name: QUARKUS_GOOGLE_CLOUD_LOCATION
+          valueFrom:
+            secretKeyRef:
+              name: olli-backend-config
+              key: location
+        - name: FIRESTORE_PROJECT_ID
+          valueFrom:
+            secretKeyRef:
+              name: olli-backend-config
+              key: firestore-project-id
+        - name: AWS_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: olli-backend-config
+              key: aws-access-key
+        - name: AWS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: olli-backend-config
+              key: aws-secret-key
+        # Health checks for Kubernetes
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      # Service account with appropriate permissions
+      serviceAccountName: olli-backend-sa
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: olli-backend
+  namespace: olli-ai
+  labels:
+    app: olli-backend
+spec:
+  selector:
+    app: olli-backend
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: http
+  type: ClusterIP
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: olli-backend-monitor
+  namespace: olli-ai
+  labels:
+    app: olli-backend
+spec:
+  selector:
+    matchLabels:
+      app: olli-backend
+  endpoints:
+  - port: http
+    path: /q/metrics
+    interval: 15s
+  namespaceSelector:
+    matchNames:
+    - olli-ai
