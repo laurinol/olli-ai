@@ -20,13 +20,19 @@ This document outlines our plan for migrating from the misused `Invite` system t
 - ✅ Create test script (`test-verification.sh`) for validating changes
 - ✅ Add testing documentation
 
-### Phase 2: Frontend and Additional Endpoints (🔄)
+### Phase 2: Test Endpoints and Integration Tests (✅)
+
+- ✅ Update test endpoints to use Verification instead of Invite
+- ✅ Add backward compatibility to test endpoints
+- ✅ Update collection debug endpoints to include verifications
+- ✅ Update integration tests to use the new verification system
+
+### Phase 3: Frontend and Email Templates (🔄)
 
 - ❌ Update "Invites" language in frontend to use "Verification" for email verification
-- ❌ Update any other endpoints using Invite for email verification
 - ❌ Update email templates and subject lines to properly reflect verification purpose
 
-### Phase 3: Cleanup and New Invitation System (❌)
+### Phase 4: Cleanup and New Invitation System (❌)
 
 - ❌ Remove deprecated methods in UserRepository after confirming all code is migrated
 - ❌ Implement a proper Invitation system for team members
