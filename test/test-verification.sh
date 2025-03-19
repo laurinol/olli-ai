@@ -17,12 +17,19 @@ NC='\033[0m' # No Color
 
 # Check if MongoDB is running
 echo -e "${BLUE}Checking if MongoDB is running...${NC}"
-if ! mongo --quiet --eval "db.version()" > /dev/null 2>&1; then
+if ! nc -z localhost 27017 2>/dev/null; then
   echo -e "${RED}Error: MongoDB is not running. Please start MongoDB first.${NC}"
   echo -e "${YELLOW}Try running:${NC} docker-compose -f test/docker-compose.yml up -d"
   exit 1
 fi
 echo -e "${GREEN}MongoDB is running.${NC}"
+
+# Define mongo_eval function to execute MongoDB commands
+mongo_eval() {
+  local db="$1"
+  local command="$2"
+  docker exec -i mongodb bash -c "echo '$command' | mongosh --quiet $db"
+}
 
 # Check if Quarkus app is running
 echo -e "${BLUE}Checking if the application is running...${NC}"
@@ -41,8 +48,8 @@ echo "===================================================="
 
 # Clean up any existing records for our test email
 echo -e "${BLUE}Cleaning up any existing verifications or invites for ${EMAIL}...${NC}"
-mongo --quiet mongodb://localhost:27017/olli --eval "db.verifications.remove({email: '${EMAIL}'})"
-mongo --quiet mongodb://localhost:27017/olli --eval "db.invites.remove({email: '${EMAIL}'})"
+mongo_eval "olli" "db.verifications.deleteMany({email: '${EMAIL}'})"
+mongo_eval "olli" "db.invites.deleteMany({email: '${EMAIL}'})"
 echo -e "${GREEN}Cleanup complete.${NC}"
 
 # Step 1: Create a verification
@@ -73,7 +80,7 @@ else
   CREATED_AT=$(date +%s)
   EXPIRES_AT=$((CREATED_AT + 172800000)) # 48 hours in milliseconds
   
-  INSERTION_RESULT=$(mongo --quiet mongodb://localhost:27017/olli --eval "
+  INSERTION_RESULT=$(mongo_eval "olli" "
     db.verifications.insertOne({
       token: '${TOKEN}',
       businessId: '${BUSINESS_ID}',
@@ -103,12 +110,12 @@ if [ "$APP_RUNNING" = false ]; then
   echo -e "${GREEN}✅ Using manually created token: ${TOKEN}${NC}"
 else
   # Otherwise get from database
-  TOKEN=$(mongo --quiet mongodb://localhost:27017/olli --eval "db.verifications.findOne({email: '${EMAIL}'}).token" | tr -d '"')
+  TOKEN=$(mongo_eval "olli" "db.verifications.findOne({email: '${EMAIL}'}).token" | tr -d '"')
 
   if [ -z "$TOKEN" ]; then
     echo -e "${RED}❌ No verification token found in database${NC}"
     # Try the old invites collection as fallback
-    TOKEN=$(mongo --quiet mongodb://localhost:27017/olli --eval "db.invites.findOne({email: '${EMAIL}'}).token" | tr -d '"')
+    TOKEN=$(mongo_eval "olli" "db.invites.findOne({email: '${EMAIL}'}).token" | tr -d '"')
     
     if [ -z "$TOKEN" ]; then
       echo -e "${RED}❌ No invite token found in database either${NC}"
@@ -151,7 +158,7 @@ else
   USER_ID="user-$(date +%s)"
   
   # 2. Create user record
-  mongo --quiet mongodb://localhost:27017/olli --eval "
+  mongo_eval "olli" "
     db.users.insertOne({
       id: '${USER_ID}',
       email: '${EMAIL}',
@@ -165,7 +172,7 @@ else
   "
   
   # 3. Create business user record
-  mongo --quiet mongodb://localhost:27017/olli --eval "
+  mongo_eval "olli" "
     db.business_users.insertOne({
       id: '${USER_ID}',
       businessId: '${BUSINESS_ID}',
@@ -183,14 +190,14 @@ echo -e "${YELLOW}Step 4: Checking if verification is marked as verified${NC}"
 
 if [ "$APP_RUNNING" = true ]; then
   # When the app is running, it should have updated the verification status
-  VERIFIED=$(mongo --quiet mongodb://localhost:27017/olli --eval "db.verifications.findOne({token: '${TOKEN}'}).verified" || echo "false")
+  VERIFIED=$(mongo_eval "olli" "db.verifications.findOne({token: '${TOKEN}'}).verified" || echo "false")
 
   if [ "$VERIFIED" = "true" ]; then
     echo -e "${GREEN}✅ Verification marked as verified${NC}"
   else
     echo -e "${RED}❌ Verification not marked as verified${NC}"
     # Try the old invites collection as fallback
-    CLAIMED=$(mongo --quiet mongodb://localhost:27017/olli --eval "db.invites.findOne({token: '${TOKEN}'}).claimed" || echo "false")
+    CLAIMED=$(mongo_eval "olli" "db.invites.findOne({token: '${TOKEN}'}).claimed" || echo "false")
     
     if [ "$CLAIMED" = "true" ]; then
       echo -e "${YELLOW}⚠️ Invite marked as claimed in the invites collection (using backward compatibility)${NC}"
@@ -203,7 +210,7 @@ else
   # If app is not running, manually mark the verification as verified
   echo -e "${BLUE}Manually marking verification as verified...${NC}"
   
-  UPDATE_RESULT=$(mongo --quiet mongodb://localhost:27017/olli --eval "
+  UPDATE_RESULT=$(mongo_eval "olli" "
     db.verifications.updateOne(
       {token: '${TOKEN}'},
       {\$set: {verified: true}}
@@ -218,7 +225,7 @@ else
   fi
   
   # Verify our update worked
-  VERIFIED=$(mongo --quiet mongodb://localhost:27017/olli --eval "db.verifications.findOne({token: '${TOKEN}'}).verified" || echo "false")
+  VERIFIED=$(mongo_eval "olli" "db.verifications.findOne({token: '${TOKEN}'}).verified" || echo "false")
   if [ "$VERIFIED" = "true" ]; then
     echo -e "${GREEN}✅ Verification status verified in database${NC}"
   else
