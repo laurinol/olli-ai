@@ -27,6 +27,7 @@ import pro.olli.models.BusinessUser;
 import pro.olli.models.Invite;
 import pro.olli.models.SyncHistoryEntry;
 import pro.olli.models.User;
+import pro.olli.models.Verification;
 import pro.olli.repository.UserRepository;
 
 import java.time.Instant;
@@ -46,8 +47,9 @@ public class MongoUserRepository implements UserRepository {
 
     private static final Logger LOG = Logger.getLogger(MongoUserRepository.class);
     private static final String USERS_COLLECTION = "users";
-    private static final String INVITES_COLLECTION = "invites";
+    private static final String INVITES_COLLECTION = "invites"; // Will be used for verifications too
     private static final String BUSINESSES_COLLECTION = "businesses";
+    private static final String VERIFICATIONS_COLLECTION = "verifications"; // New collection for verifications
     private static final String BUSINESS_USERS_COLLECTION = "business_users";
 
     private final MongoClient mongoClient;
@@ -72,6 +74,10 @@ public class MongoUserRepository implements UserRepository {
     
     private MongoCollection<Document> getInvitesCollection() {
         return mongoClient.getDatabase(databaseName).getCollection(INVITES_COLLECTION);
+    }
+    
+    private MongoCollection<Document> getVerificationsCollection() {
+        return mongoClient.getDatabase(databaseName).getCollection(VERIFICATIONS_COLLECTION);
     }
     
     private MongoCollection<Document> getBusinessesCollection() {
@@ -175,6 +181,54 @@ public class MongoUserRepository implements UserRepository {
         LOG.debugf("Created Invite object with claimed=%s", invite.isClaimed());
         
         return invite;
+    }
+    
+    // Helper methods for Verification document conversion
+    private Document verificationToDocument(Verification verification) {
+        LOG.debugf("Converting Verification to Document: token=%s, email=%s, verified=%s", 
+            verification.getToken(), verification.getEmail(), verification.isVerified());
+            
+        Document doc = new Document();
+        doc.append("token", verification.getToken());
+        doc.append("businessId", verification.getBusinessId());
+        doc.append("email", verification.getEmail());
+        
+        if (verification.getRole() != null) {
+            doc.append("role", verification.getRole());
+        }
+        
+        doc.append("createdAt", verification.getCreatedAt().toEpochMilli());
+        doc.append("expiresAt", verification.getExpiresAt().toEpochMilli());
+        doc.append("verified", verification.isVerified());
+        
+        LOG.debugf("Verification document created with verified=%s", verification.isVerified());
+        
+        return doc;
+    }
+
+    private Verification documentToVerification(Document doc) {
+        if (doc == null) {
+            return null;
+        }
+        
+        String token = doc.getString("token");
+        String businessId = doc.getString("businessId");
+        String email = doc.getString("email");
+        String role = doc.getString("role");
+        boolean verified = doc.getBoolean("verified", false);
+        
+        Instant createdAt = Instant.ofEpochMilli(doc.getLong("createdAt"));
+        Instant expiresAt = Instant.ofEpochMilli(doc.getLong("expiresAt"));
+        
+        LOG.debugf("Converting Document to Verification: token=%s, email=%s, verified=%s", 
+            token, email, verified);
+        
+        Verification verification = new Verification(token, businessId, email, role, 
+                                   createdAt, expiresAt, verified);
+                                   
+        LOG.debugf("Created Verification object with verified=%s", verification.isVerified());
+        
+        return verification;
     }
 
     // Interface implementation methods
@@ -410,6 +464,131 @@ public class MongoUserRepository implements UserRepository {
             } catch (Exception e) {
                 LOG.errorf("Failed to retrieve invite for email %s: %s", email, e.getMessage());
                 throw new AppException("Failed to retrieve invite by email", e, AppException.ErrorType.DATA_ACCESS_ERROR);
+            }
+        });
+    }
+    
+    @Override
+    public Uni<Void> saveVerification(Verification verification) {
+        LOG.infof("MongoDB: Saving verification with token: %s, verified: %s", 
+            verification.getToken(), verification.isVerified());
+        return Uni.createFrom().item(() -> {
+            try {
+                // Check if we're updating an existing verification to verified=true
+                boolean updatingToVerifiedState = verification.isVerified();
+                if (updatingToVerifiedState) {
+                    LOG.infof("MongoDB: Attempting to update verification to verified=true for token: %s", 
+                        verification.getToken());
+                }
+                
+                Document doc = verificationToDocument(verification);
+                LOG.infof("MongoDB: Document to save: %s", doc.toJson());
+                
+                // First check if verification exists
+                Document existing = getVerificationsCollection().find(Filters.eq("token", verification.getToken())).first();
+                if (existing != null) {
+                    LOG.infof("MongoDB: Found existing verification with token %s, current verified status: %s", 
+                        verification.getToken(), existing.getBoolean("verified", false));
+                    
+                    // Extra logging for verified status updates
+                    if (updatingToVerifiedState && !existing.getBoolean("verified", false)) {
+                        LOG.infof("MongoDB: Changing verification from unverified to verified for token: %s", 
+                            verification.getToken());
+                    }
+                }
+                
+                // Now replace or insert
+                LOG.infof("MongoDB: Executing replaceOne operation with token: %s, verified=%s", 
+                    verification.getToken(), verification.isVerified());
+                getVerificationsCollection().replaceOne(
+                    Filters.eq("token", verification.getToken()),
+                    doc,
+                    new ReplaceOptions().upsert(true)
+                );
+                
+                // Verify the update worked with explicit checks for verified status
+                Document saved = getVerificationsCollection().find(Filters.eq("token", verification.getToken())).first();
+                if (saved != null) {
+                    boolean savedVerifiedStatus = saved.getBoolean("verified", false);
+                    LOG.infof("MongoDB: Verified verification saved. Token: %s, verified: %s", 
+                        saved.getString("token"), savedVerifiedStatus);
+                    
+                    // Double-check the verified status was saved correctly
+                    if (updatingToVerifiedState && !savedVerifiedStatus) {
+                        LOG.errorf("MongoDB: CRITICAL ERROR - Failed to update verified status! Expected verified=true but got verified=false");
+                    } else if (updatingToVerifiedState) {
+                        LOG.infof("MongoDB: Successfully verified verified=true was saved correctly");
+                    }
+                } else {
+                    LOG.warnf("MongoDB: Failed to verify verification save. Verification not found after save operation.");
+                }
+                
+                LOG.debugf("Successfully saved verification with token: %s", verification.getToken());
+                return null;
+            } catch (Exception e) {
+                LOG.errorf("Failed to save verification with token %s: %s", verification.getToken(), e.getMessage());
+                throw new AppException("Failed to save verification", e, AppException.ErrorType.DATA_ACCESS_ERROR);
+            }
+        });
+    }
+
+    @Override
+    public Uni<Optional<Verification>> getVerification(String token) {
+        LOG.infof("MongoDB: Retrieving verification with token: %s", token);
+        return Uni.createFrom().item(() -> {
+            try {
+                Document doc = getVerificationsCollection().find(Filters.eq("token", token)).first();
+                Verification verification = documentToVerification(doc);
+                LOG.debugf("Retrieved verification with token: %s, exists: %s", token, verification != null);
+                return Optional.ofNullable(verification);
+            } catch (Exception e) {
+                LOG.errorf("Failed to retrieve verification with token %s: %s", token, e.getMessage());
+                throw new AppException("Failed to retrieve verification", e, AppException.ErrorType.DATA_ACCESS_ERROR);
+            }
+        });
+    }
+
+    @Override
+    public Uni<Void> deleteVerification(String token) {
+        LOG.infof("MongoDB: Deleting verification with token: %s", token);
+        return Uni.createFrom().item(() -> {
+            try {
+                getVerificationsCollection().deleteOne(Filters.eq("token", token));
+                LOG.debugf("Successfully deleted verification with token: %s", token);
+                return null;
+            } catch (Exception e) {
+                LOG.errorf("Failed to delete verification with token %s: %s", token, e.getMessage());
+                throw new AppException("Failed to delete verification", e, AppException.ErrorType.DATA_ACCESS_ERROR);
+            }
+        });
+    }
+
+    @Override
+    public Uni<Optional<Verification>> getVerificationByEmail(String email) {
+        LOG.infof("MongoDB: Retrieving verification for email: %s", email);
+        return Uni.createFrom().item(() -> {
+            try {
+                // Find the most recent verification for this email
+                FindIterable<Document> verifications = getVerificationsCollection()
+                    .find(Filters.eq("email", email))
+                    .sort(new Document("createdAt", -1)) // Sort by createdAt descending (newest first)
+                    .limit(1); // Only get the most recent one
+                
+                Document doc = verifications.first();
+                if (doc == null) {
+                    LOG.debugf("No verification found for email: %s", email);
+                    return Optional.empty();
+                }
+                
+                Verification verification = documentToVerification(doc);
+                LOG.infof("Retrieved verification for email: %s, token: %s, verified: %s", 
+                    email, verification.getToken(), verification.isVerified());
+                
+                return Optional.of(verification);
+            } catch (Exception e) {
+                LOG.errorf("Failed to retrieve verification for email %s: %s", email, e.getMessage());
+                throw new AppException("Failed to retrieve verification by email", 
+                    e, AppException.ErrorType.DATA_ACCESS_ERROR);
             }
         });
     }

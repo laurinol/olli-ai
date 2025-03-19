@@ -28,6 +28,7 @@ import pro.olli.core.resilience.exception.AppException;
 import pro.olli.models.Business;
 import pro.olli.models.BusinessUser;
 import pro.olli.models.Invite;
+import pro.olli.models.Verification;
 import pro.olli.models.SyncHistoryEntry;
 import pro.olli.models.User;
 import pro.olli.repository.UserRepository;
@@ -350,5 +351,145 @@ public class FirestoreUserRepository implements UserRepository {
     public Uni<Void> updateBusinessUserSyncHistory(String businessId, String userId, BusinessUser updatedUser) {
         LOG.infof("Firestore: Updating history for user with ID: %s for business: %s", userId, businessId);
         return Uni.createFrom().item(() -> null);
+    }
+    
+    // Verification mapping methods
+    private Verification mapToVerification(DocumentSnapshot doc) {
+        if (doc == null || !doc.exists()) {
+            return null;
+        }
+
+        Map<String, Object> data = doc.getData();
+        if (data == null) {
+            return null;
+        }
+
+        String token = (String) data.getOrDefault("token", doc.getId());
+        String businessId = (String) data.get("businessId");
+        String email = (String) data.get("email");
+        String role = (String) data.get("role");
+        boolean verified = Boolean.TRUE.equals(data.get("verified"));
+
+        Instant createdAt = null;
+        if (data.get("createdAt") instanceof Long) {
+            createdAt = Instant.ofEpochMilli((Long) data.get("createdAt"));
+        }
+
+        Instant expiresAt = null;
+        if (data.get("expiresAt") instanceof Long) {
+            expiresAt = Instant.ofEpochMilli((Long) data.get("expiresAt"));
+        }
+
+        return new Verification(token, businessId, email, role,
+                        createdAt != null ? createdAt : Instant.now(),
+                        expiresAt != null ? expiresAt : Instant.now().plusSeconds(48 * 60 * 60),
+                        verified);
+    }
+
+    private Map<String, Object> verificationToMap(Verification verification) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("token", verification.getToken());
+        data.put("businessId", verification.getBusinessId());
+        data.put("email", verification.getEmail());
+
+        if (verification.getRole() != null) {
+            data.put("role", verification.getRole());
+        }
+
+        data.put("createdAt", verification.getCreatedAt().toEpochMilli());
+        data.put("expiresAt", verification.getExpiresAt().toEpochMilli());
+        data.put("verified", verification.isVerified());
+
+        return data;
+    }
+
+    // Verification methods
+    @Override
+    public Uni<Void> saveVerification(Verification verification) {
+        LOG.infof("Firestore: Saving verification with token: %s, verified: %s", 
+            verification.getToken(), verification.isVerified());
+        
+        // Check if we're updating an existing verification to verified=true
+        boolean updatingToVerifiedState = verification.isVerified();
+        if (updatingToVerifiedState) {
+            LOG.infof("Firestore: Attempting to update verification to verified=true for token: %s", 
+                verification.getToken());
+        }
+        
+        Map<String, Object> verificationData = verificationToMap(verification);
+        LOG.infof("Firestore: Verification data to save: %s", verificationData);
+
+        return Uni.createFrom().future(
+            firestore.collection("verifications").document(verification.getToken()).set(verificationData)
+        ).map(ignored -> {
+            LOG.infof("Firestore: Successfully saved verification with token: %s, verified: %s", 
+                verification.getToken(), verification.isVerified());
+            return (Void) null;
+        })
+        .onFailure().invoke(e -> LOG.errorf("Failed to save verification with token %s: %s", 
+            verification.getToken(), e.getMessage()))
+        .onFailure().transform(e -> new AppException("Failed to save verification", e,
+            AppException.ErrorType.DATA_ACCESS_ERROR));
+    }
+
+    @Override
+    public Uni<Optional<Verification>> getVerification(String token) {
+        LOG.infof("Firestore: Retrieving verification with token: %s", token);
+        
+        return Uni.createFrom().future(
+            firestore.collection("verifications").document(token).get()
+        ).map(doc -> {
+            Verification verification = mapToVerification(doc);
+            LOG.debugf("Retrieved verification with token: %s, exists: %s", token, verification != null);
+            return Optional.ofNullable(verification);
+        })
+        .onFailure().invoke(e -> LOG.errorf("Failed to retrieve verification with token %s: %s", token, e.getMessage()))
+        .onFailure().transform(e -> new AppException("Failed to retrieve verification", e,
+            AppException.ErrorType.DATA_ACCESS_ERROR));
+    }
+
+    @Override
+    public Uni<Void> deleteVerification(String token) {
+        LOG.infof("Firestore: Deleting verification with token: %s", token);
+        
+        return Uni.createFrom().future(
+            firestore.collection("verifications").document(token).delete()
+        ).map(ignored -> {
+            LOG.debugf("Successfully deleted verification with token: %s", token);
+            return (Void) null;
+        })
+        .onFailure().invoke(e -> LOG.errorf("Failed to delete verification with token %s: %s", token, e.getMessage()))
+        .onFailure().transform(e -> new AppException("Failed to delete verification", e,
+            AppException.ErrorType.DATA_ACCESS_ERROR));
+    }
+
+    @Override
+    public Uni<Optional<Verification>> getVerificationByEmail(String email) {
+        LOG.infof("Firestore: Retrieving verification for email: %s", email);
+        
+        // Query by email field and sort by createdAt to get the most recent
+        return Uni.createFrom().future(
+            firestore.collection("verifications")
+                    .whereEqualTo("email", email)
+                    .orderBy("createdAt", com.google.cloud.firestore.Query.Direction.DESCENDING)
+                    .limit(1)
+                    .get()
+        ).map(querySnapshot -> {
+            if (querySnapshot.isEmpty()) {
+                LOG.infof("Firestore: No verifications found for email: %s", email);
+                return Optional.<Verification>empty();
+            }
+            
+            DocumentSnapshot doc = querySnapshot.getDocuments().get(0);
+            Verification verification = mapToVerification(doc);
+            LOG.infof("Firestore: Retrieved verification for email %s, token: %s, verified: %s", 
+                email, verification.getToken(), verification.isVerified());
+            return Optional.<Verification>of(verification);
+        })
+        .onFailure().invoke(e -> LOG.errorf("Failed to retrieve verification for email %s: %s", email, e.getMessage()))
+        .onFailure().recoverWithItem(e -> {
+            LOG.errorf("Failed to retrieve verification by email: %s", e.getMessage());
+            return Optional.<Verification>empty();
+        });
     }
 }

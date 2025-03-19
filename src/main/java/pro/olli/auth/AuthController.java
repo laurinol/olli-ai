@@ -16,6 +16,7 @@ import pro.olli.models.Business;
 import pro.olli.models.BusinessUser;
 import pro.olli.models.Invite;
 import pro.olli.models.User;
+import pro.olli.models.Verification;
 import pro.olli.repository.UserRepository;
 import pro.olli.repository.Factory;
 
@@ -54,46 +55,42 @@ public class AuthController {
             try {
                 String token = generateTemporaryToken();
 
-                // Create a new Invite
-                Invite invite = new Invite(
+                // Create a new Verification (was previously Invite)
+                Verification verification = new Verification(
                     token,
                     inviteRequest.businessId,
                     inviteRequest.email,
-                    "user", // Default role
-                    null, // No inviter info in this context
-                    Instant.now(),
-                    Instant.now().plusSeconds(24 * 60 * 60),
-                    false // Not claimed yet
+                    "user" // Default role
                 );
 
                 // Use reactive style - no blocking calls!
-                userRepository.saveInvite(invite)
+                userRepository.saveVerification(verification)
                     .subscribe().with(
                         success -> {
-                            String inviteLink = String.format("%s/auth/register?token=%s", appDomain, token);
-                            // Create the email with the invite link
+                            String verificationLink = String.format("%s/auth/register?token=%s", appDomain, token);
+                            // Create the email with the verification link
                             Mail mail = Mail.withText(inviteRequest.email,
-                                "You're Invited to Join Olli-AI",
-                                "Click here to register: " + inviteLink + "\nExpires in 24 hours.");
+                                "Verify Your Email with Olli-AI",
+                                "Click here to verify your email and complete registration: " + verificationLink + "\nExpires in 48 hours.");
 
                             // Send the email using the reactive mailer, which won't block
                             mailer.send(mail)
                                 .subscribe().with(
-                                    result -> LOG.infof("Email sent to %s", inviteRequest.email),
-                                    error -> LOG.errorf("Failed to send email: %s", error.getMessage())
+                                    result -> LOG.infof("Verification email sent to %s", inviteRequest.email),
+                                    error -> LOG.errorf("Failed to send verification email: %s", error.getMessage())
                                 );
 
                             // Acknowledge immediately without waiting for email to be sent
-                            LOG.infof("Invite created for %s for business %s", inviteRequest.email, inviteRequest.businessId);
-                            emitter.complete(Response.ok(Map.of("message", "Invite sent")).build());
+                            LOG.infof("Verification created for %s for business %s", inviteRequest.email, inviteRequest.businessId);
+                            emitter.complete(Response.ok(Map.of("message", "Verification email sent")).build());
                         },
                         failure -> {
-                            LOG.errorf("Failed to save invite: %s", failure.getMessage());
+                            LOG.errorf("Failed to save verification: %s", failure.getMessage());
                             emitter.fail(failure);
                         }
                     );
             } catch (Exception e) {
-                LOG.errorf("Failed to create invite: %s", e.getMessage());
+                LOG.errorf("Failed to create verification: %s", e.getMessage());
                 emitter.fail(e);
             }
         });
@@ -151,15 +148,15 @@ public class AuthController {
         // Use AtomicReference to hold values we need across steps
         AtomicReference<String> userId = new AtomicReference<>();
         AtomicReference<String> businessId = new AtomicReference<>();
-        AtomicReference<Invite> inviteRef = new AtomicReference<>();
+        AtomicReference<Verification> verificationRef = new AtomicReference<>();
 
         return Uni.createFrom().emitter(emitter -> {
             try {
-                // Step 1: Find the invite
-                userRepository.getInvite(registerRequest.token)
+                // Step 1: Find the verification
+                userRepository.getVerification(registerRequest.token)
                     .subscribe().with(
-                        inviteOpt -> {
-                            if (inviteOpt.isEmpty()) {
+                        verificationOpt -> {
+                            if (verificationOpt.isEmpty()) {
                                 LOG.warnf("Invalid token: %s", registerRequest.token);
                                 emitter.complete(Response.status(400)
                                     .entity(Map.of("error", "Invalid or expired token"))
@@ -167,19 +164,19 @@ public class AuthController {
                                 return;
                             }
 
-                            // Got the invite
-                            Invite invite = inviteOpt.get();
-                            inviteRef.set(invite);
-                            String inviteEmail = invite.getEmail();
-                            String inviteBusinessId = invite.getBusinessId();
-                            businessId.set(inviteBusinessId);
-                            Instant expiresAt = invite.getExpiresAt();
+                            // Got the verification
+                            Verification verification = verificationOpt.get();
+                            verificationRef.set(verification);
+                            String verificationEmail = verification.getEmail();
+                            String verificationBusinessId = verification.getBusinessId();
+                            businessId.set(verificationBusinessId);
+                            Instant expiresAt = verification.getExpiresAt();
 
-                            LOG.infof("Found invite for email: %s, business: %s", inviteEmail, inviteBusinessId);
+                            LOG.infof("Found verification for email: %s, business: %s", verificationEmail, verificationBusinessId);
 
-                            if (!inviteEmail.equals(registerRequest.email) || Instant.now().isAfter(expiresAt)) {
-                                LOG.warnf("Invite email mismatch or expired. Expected: %s, Got: %s, Expired: %s",
-                                    inviteEmail, registerRequest.email, Instant.now().isAfter(expiresAt));
+                            if (!verificationEmail.equals(registerRequest.email) || Instant.now().isAfter(expiresAt)) {
+                                LOG.warnf("Verification email mismatch or expired. Expected: %s, Got: %s, Expired: %s",
+                                    verificationEmail, registerRequest.email, Instant.now().isAfter(expiresAt));
                                 emitter.complete(Response.status(400)
                                     .entity(Map.of("error", "Invalid or expired token"))
                                     .build());
@@ -192,7 +189,7 @@ public class AuthController {
 
                             String hashedPassword = hashPassword(registerRequest.password);
                             Map<String, Object> metadata = new HashMap<>();
-                            metadata.put("businessId", inviteBusinessId);
+                            metadata.put("businessId", verificationBusinessId);
                             metadata.put("hashedPassword", hashedPassword);
 
                             User user = new User(
@@ -214,21 +211,21 @@ public class AuthController {
                                     LOG.infof("STEP 2: User saved successfully: %s", newUserId);
 
                                     // Step 3: Create or get business
-                                    LOG.infof("STEP 3: Checking if business %s exists", inviteBusinessId);
-                                    userRepository.getBusiness(inviteBusinessId).subscribe().with(
+                                    LOG.infof("STEP 3: Checking if business %s exists", verificationBusinessId);
+                                    userRepository.getBusiness(verificationBusinessId).subscribe().with(
                                         businessOpt -> {
                                             try {
                                                 Business business;
                                                 if (businessOpt.isEmpty()) {
-                                                    LOG.infof("Business doesn't exist, creating it: %s", inviteBusinessId);
-                                                    business = new Business(inviteBusinessId, inviteBusinessId, "basic");
+                                                    LOG.infof("Business doesn't exist, creating it: %s", verificationBusinessId);
+                                                    business = new Business(verificationBusinessId, verificationBusinessId, "basic");
                                                     // Save business first
                                                     userRepository.saveBusiness(business).subscribe().with(
                                                         v -> {
-                                                            LOG.infof("STEP 3a: Business created: %s", inviteBusinessId);
-                                                            createBusinessUserAndFinish(
-                                                                newUserId, inviteBusinessId, registerRequest.email,
-                                                                invite, registerRequest, emitter);
+                                                            LOG.infof("STEP 3a: Business created: %s", verificationBusinessId);
+                                                            createBusinessUserAndFinishWithVerification(
+                                                                newUserId, verificationBusinessId, registerRequest.email,
+                                                                verification, registerRequest, emitter);
                                                         },
                                                         err -> {
                                                             LOG.errorf("Failed to save business: %s", err.getMessage());
@@ -238,10 +235,10 @@ public class AuthController {
                                                         }
                                                     );
                                                 } else {
-                                                    LOG.infof("STEP 3b: Business already exists: %s", inviteBusinessId);
-                                                    createBusinessUserAndFinish(
-                                                        newUserId, inviteBusinessId, registerRequest.email,
-                                                        invite, registerRequest, emitter);
+                                                    LOG.infof("STEP 3b: Business already exists: %s", verificationBusinessId);
+                                                    createBusinessUserAndFinishWithVerification(
+                                                        newUserId, verificationBusinessId, registerRequest.email,
+                                                        verification, registerRequest, emitter);
                                                 }
                                             } catch (Exception e) {
                                                 LOG.errorf("Error in business step: %s", e.getMessage(), e);
@@ -267,9 +264,9 @@ public class AuthController {
                             );
                         },
                         error -> {
-                            LOG.errorf("Error retrieving invite: %s", error.getMessage());
+                            LOG.errorf("Error retrieving verification: %s", error.getMessage());
                             emitter.complete(Response.status(500)
-                                .entity(Map.of("error", "Error retrieving invite: " + error.getMessage()))
+                                .entity(Map.of("error", "Error retrieving verification: " + error.getMessage()))
                                 .build());
                         }
                     );
@@ -282,6 +279,65 @@ public class AuthController {
         });
     }
 
+    private void createBusinessUserAndFinishWithVerification(String userId, String businessId, String email,
+                                            Verification verification, RegisterRequest registerRequest,
+                                            io.smallrye.mutiny.subscription.UniEmitter<? super Response> emitter) {
+        LOG.infof("STEP 4: Creating business user association for user %s in business %s", userId, businessId);
+
+        // Create business user association
+        BusinessUser businessUser = new BusinessUser(
+            userId,
+            businessId,
+            email,
+            null, // No name provided
+            "admin" // First user is admin
+        );
+
+        userRepository.saveBusinessUser(businessUser).subscribe().with(
+            success -> {
+                LOG.infof("STEP 4: Business user saved successfully");
+
+                // Step 5: Mark verification as verified
+                LOG.infof("STEP 5: Marking verification as verified");
+                // Use the withVerified() method to ensure we get a verified copy
+                Verification verifiedObj = verification.withVerified();
+                LOG.infof("STEP 5: Created verified verification object with token=%s, verified=%s",
+                        verifiedObj.getToken(), verifiedObj.isVerified());
+
+                userRepository.saveVerification(verifiedObj).subscribe().with(
+                    v -> {
+                        LOG.infof("STEP 5: Verification marked as verified");
+
+                        // Step 6: Generate token and return success
+                        LOG.infof("STEP 6: Registration complete, generating JWT");
+                        String jwt = issueJwt(userId);
+                        emitter.complete(Response.ok(Map.of("token", jwt, "userId", userId))
+                            .header("Authorization", "Bearer " + jwt)
+                            .build());
+                    },
+                    err -> {
+                        LOG.errorf("Failed to mark verification as verified: %s", err.getMessage());
+                        // Continue anyway since the user is created
+                        String jwt = issueJwt(userId);
+                        emitter.complete(Response.ok(Map.of(
+                                "token", jwt,
+                                "userId", userId,
+                                "warning", "User created but verification not marked as verified"))
+                            .header("Authorization", "Bearer " + jwt)
+                            .build());
+                    }
+                );
+            },
+            err -> {
+                LOG.errorf("Error saving business user: %s", err.getMessage());
+                emitter.complete(Response.status(500)
+                    .entity(Map.of("error", "Failed to save business user: " + err.getMessage()))
+                    .build());
+            }
+        );
+    }
+    
+    // Keep the old method temporarily for backward compatibility during migration
     private void createBusinessUserAndFinish(String userId, String businessId, String email,
                                             Invite invite, RegisterRequest registerRequest,
                                             io.smallrye.mutiny.subscription.UniEmitter<? super Response> emitter) {
