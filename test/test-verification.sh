@@ -1,5 +1,6 @@
 #!/bin/bash
-set -e
+# Don't exit on error so we can provide better error messages
+set +e
 
 # Variables
 API_URL="http://localhost:8080"
@@ -11,7 +12,27 @@ PASSWORD="password123"
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Check if MongoDB is running
+echo -e "${BLUE}Checking if MongoDB is running...${NC}"
+if ! mongo --quiet --eval "db.version()" > /dev/null 2>&1; then
+  echo -e "${RED}Error: MongoDB is not running. Please start MongoDB first.${NC}"
+  echo -e "${YELLOW}Try running:${NC} docker-compose -f test/docker-compose.yml up -d"
+  exit 1
+fi
+echo -e "${GREEN}MongoDB is running.${NC}"
+
+# Check if Quarkus app is running
+echo -e "${BLUE}Checking if the application is running...${NC}"
+if ! curl -s "${API_URL}/health" > /dev/null 2>&1; then
+  echo -e "${RED}Error: The application doesn't seem to be running.${NC}"
+  echo -e "${YELLOW}Please start the application in another terminal with:${NC} mvn quarkus:dev"
+  echo -e "${YELLOW}Then run this test script again.${NC}"
+  exit 1
+fi
+echo -e "${GREEN}Application is running.${NC}"
 
 echo -e "${YELLOW}Testing Verification System for Email Registration${NC}"
 echo "===================================================="
