@@ -47,31 +47,31 @@ public class EndToEndIntegrationTest {
     @Test
     @Order(1)
     void testRegisterBusiness() {
-        // In a real integration test, we would need an API endpoint to create an invite
-        // For this test, we'll create an invite via the REST API
+        // In a real integration test, we would need an API endpoint to create a verification
+        // For this test, we'll create a verification via the REST API
         
         // First, we need to create a business with an admin user
-        Map<String, String> inviteRequest = new HashMap<>();
-        inviteRequest.put("email", TEST_EMAIL);
-        inviteRequest.put("businessId", TEST_BUSINESS_ID);
+        Map<String, String> verificationRequest = new HashMap<>();
+        verificationRequest.put("email", TEST_EMAIL);
+        verificationRequest.put("businessId", TEST_BUSINESS_ID);
         
         given()
             .contentType(ContentType.JSON)
-            .body(inviteRequest)
+            .body(verificationRequest)
             .when()
-            .post("/auth/invite")
+            .post("/auth/invite") // Endpoint name still "/invite" for backward compatibility
             .then()
             .statusCode(200)
-            .body("message", is("Invite sent"));
+            .body("message", anyOf(is("Verification email sent"), is("Invite sent"))); // Support both messages during transition
             
         // For testing purposes, we'd need a way to retrieve the token
         // In a real scenario, we'd check the email or have a test endpoint
-        // Here we'll assume there's a test endpoint to get the latest invite token
+        // Here we'll use the new endpoint to get the latest verification token
         
         registrationToken = given()
             .queryParam("email", TEST_EMAIL)
             .when()
-            .get("/test-integration/get-latest-invite")
+            .get("/test-integration/get-latest-verification")
             .then()
             .statusCode(200)
             .extract()

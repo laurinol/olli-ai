@@ -30,10 +30,11 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import pro.olli.models.BusinessUser;
-import pro.olli.models.Invite;
+import pro.olli.models.Invite; // Keep for backward compatibility during migration
 import pro.olli.models.SyncHistoryEntry;
 import pro.olli.models.SyncTask;
 import pro.olli.models.User;
+import pro.olli.models.Verification;
 import pro.olli.queue.TaskQueueService;
 import pro.olli.repository.Factory;
 import pro.olli.repository.UserRepository;
@@ -71,9 +72,19 @@ public class TestResource {
     @GET
     @Path("/get-latest-invite")
     @Produces(MediaType.TEXT_PLAIN)
+    @Deprecated
     public Uni<String> getLatestInvite(@QueryParam("email") String email) {
-        return userRepository.getInviteByEmail(email)
-                .map(inviteOpt -> inviteOpt.map(Invite::getToken).orElse("no-token-found"));
+        // Use the new verification method but still keep the old endpoint name for compatibility
+        return userRepository.getVerificationByEmail(email)
+                .map(verificationOpt -> verificationOpt.map(Verification::getToken).orElse("no-token-found"));
+    }
+    
+    @GET
+    @Path("/get-latest-verification")
+    @Produces(MediaType.TEXT_PLAIN)
+    public Uni<String> getLatestVerification(@QueryParam("email") String email) {
+        return userRepository.getVerificationByEmail(email)
+                .map(verificationOpt -> verificationOpt.map(Verification::getToken).orElse("no-token-found"));
     }
 
     @GET
@@ -151,38 +162,65 @@ public class TestResource {
     @GET
     @Path("/check-invite")
     @Produces(MediaType.APPLICATION_JSON)
+    @Deprecated
     public Uni<Response> checkInvite(@QueryParam("token") String token) {
-        LOG.infof("Checking invite with token: %s", token);
+        // Redirect to verification check with backward compatibility
+        return checkVerification(token);
+    }
+    
+    @GET
+    @Path("/check-verification")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> checkVerification(@QueryParam("token") String token) {
+        LOG.infof("Checking verification with token: %s", token);
         
         try {
-            // Direct MongoDB check for the invite - bypassing the repository for diagnostics
-            MongoCollection<Document> invites = mongoClient.getDatabase(databaseName).getCollection("invites");
-            Document doc = invites.find(new Document("token", token)).first();
+            // First check in the verifications collection
+            MongoCollection<Document> verifications = mongoClient.getDatabase(databaseName).getCollection("verifications");
+            Document doc = verifications.find(new Document("token", token)).first();
             
             if (doc == null) {
-                LOG.warnf("No invite found with token: %s", token);
-                return Uni.createFrom().item(Response.status(404)
-                    .entity(Map.of("found", false, "message", "No invite found with token: " + token))
-                    .build());
+                // If not found in verifications, check in invites for backward compatibility
+                MongoCollection<Document> invites = mongoClient.getDatabase(databaseName).getCollection("invites");
+                doc = invites.find(new Document("token", token)).first();
+                
+                if (doc == null) {
+                    LOG.warnf("No verification or invite found with token: %s", token);
+                    return Uni.createFrom().item(Response.status(404)
+                        .entity(Map.of("found", false, "message", "No verification found with token: " + token))
+                        .build());
+                } else {
+                    LOG.infof("Found token in legacy invites collection (using backward compatibility)");
+                }
             }
             
-            // Extract and return full invite data for inspection
+            // Extract and return full verification data for inspection
             Map<String, Object> result = new HashMap<>();
             result.put("found", true);
             result.put("token", doc.getString("token"));
             result.put("email", doc.getString("email"));
             result.put("businessId", doc.getString("businessId"));
-            result.put("claimed", doc.getBoolean("claimed", false));
+            
+            // Handle different field names between Invite and Verification
+            boolean isVerified = doc.containsKey("verified") 
+                ? doc.getBoolean("verified", false) 
+                : doc.getBoolean("claimed", false);
+                
+            result.put("verified", isVerified);
+            
+            // Add collection info
+            result.put("collection", doc.containsKey("verified") ? "verifications" : "invites");
+            
             result.put("role", doc.getString("role"));
             result.put("createdAt", doc.getLong("createdAt"));
             result.put("expiresAt", doc.getLong("expiresAt"));
             
-            LOG.infof("Found invite: token=%s, email=%s, claimed=%s", 
-                doc.getString("token"), doc.getString("email"), doc.getBoolean("claimed", false));
+            LOG.infof("Found verification: token=%s, email=%s, verified=%s", 
+                doc.getString("token"), doc.getString("email"), isVerified);
                 
             return Uni.createFrom().item(Response.ok(result).build());
         } catch (Exception e) {
-            LOG.errorf("Error checking invite: %s", e.getMessage());
+            LOG.errorf("Error checking verification: %s", e.getMessage());
             return Uni.createFrom().item(Response.serverError()
                 .entity(Map.of("error", e.getMessage()))
                 .build());
@@ -237,23 +275,19 @@ public class TestResource {
         // Generate a random test password
         String password = "test" + System.currentTimeMillis();
         
-        // Step 1: Create an invite
-        Invite invite = new Invite(
+        // Step 1: Create a verification
+        Verification verification = new Verification(
             "test-token-" + System.currentTimeMillis(),
             businessId,
             email,
-            "user", // Default role
-            null, // No inviter info
-            Instant.now(),
-            Instant.now().plusSeconds(7 * 24 * 60 * 60),
-            false // Not claimed yet
+            "user" // Default role
         );
         
-        return userRepository.saveInvite(invite)
+        return userRepository.saveVerification(verification)
             .flatMap(v -> {
-                LOG.infof("Step 1: Invite created with token: %s", invite.getToken());
+                LOG.infof("Step 1: Verification created with token: %s", verification.getToken());
                 
-                // Step 2: Create a user for this invite
+                // Step 2: Create a user for this verification
                 String userId = "user-" + System.currentTimeMillis();
                 Map<String, Object> metadata = new HashMap<>();
                 metadata.put("businessId", businessId);
@@ -293,46 +327,65 @@ public class TestResource {
                     });
             })
             .flatMap(userId -> {
-                // Step 4: Mark the invite as claimed
-                Invite claimedInvite = invite.withClaimed();
-                LOG.infof("Step 4: Marking invite as claimed, token: %s, claimed: %s", 
-                    claimedInvite.getToken(), claimedInvite.isClaimed());
+                // Step 4: Mark the verification as verified
+                Verification verifiedObj = verification.withVerified();
+                LOG.infof("Step 4: Marking verification as verified, token: %s, verified: %s", 
+                    verifiedObj.getToken(), verifiedObj.isVerified());
                 
-                return userRepository.saveInvite(claimedInvite)
+                return userRepository.saveVerification(verifiedObj)
                     .map(v -> {
-                        LOG.infof("Step 4: Invite marked as claimed");
+                        LOG.infof("Step 4: Verification marked as verified");
                         
-                        // Step 5: Verify the claimed status directly in MongoDB
+                        // Step 5: Verify the verified status directly in MongoDB
                         try {
-                            MongoCollection<Document> invites = mongoClient.getDatabase(databaseName)
-                                .getCollection("invites");
-                            Document doc = invites.find(new Document("token", invite.getToken())).first();
+                            MongoCollection<Document> verifications = mongoClient.getDatabase(databaseName)
+                                .getCollection("verifications");
+                            Document doc = verifications.find(new Document("token", verification.getToken())).first();
                             
                             if (doc != null) {
-                                boolean claimed = doc.getBoolean("claimed", false);
-                                LOG.infof("MongoDB verification: invite claimed=%s", claimed);
+                                boolean verified = doc.getBoolean("verified", false);
+                                LOG.infof("MongoDB verification: verification verified=%s", verified);
                                 
                                 return Response.ok(Map.of(
                                     "success", true,
                                     "message", "Test registration flow completed successfully",
-                                    "token", invite.getToken(),
+                                    "token", verification.getToken(),
                                     "userId", userId,
-                                    "verified", claimed
+                                    "verified", verified
                                 )).build();
                             } else {
-                                return Response.ok(Map.of(
-                                    "success", true,
-                                    "message", "Registration completed but invite not found in direct DB check",
-                                    "token", invite.getToken(),
-                                    "userId", userId
-                                )).build();
+                                // Check if it might have been stored in invites through the adapter
+                                MongoCollection<Document> invites = mongoClient.getDatabase(databaseName)
+                                    .getCollection("invites");
+                                Document inviteDoc = invites.find(new Document("token", verification.getToken())).first();
+                                
+                                if (inviteDoc != null) {
+                                    boolean claimed = inviteDoc.getBoolean("claimed", false);
+                                    LOG.infof("MongoDB verification: found in invites collection, claimed=%s", claimed);
+                                    
+                                    return Response.ok(Map.of(
+                                        "success", true,
+                                        "message", "Registration completed successfully via backward compatibility",
+                                        "token", verification.getToken(),
+                                        "userId", userId,
+                                        "verified", claimed,
+                                        "note", "Found in invites collection (backward compatibility)"
+                                    )).build();
+                                } else {
+                                    return Response.ok(Map.of(
+                                        "success", true,
+                                        "message", "Registration completed but verification not found in direct DB check",
+                                        "token", verification.getToken(),
+                                        "userId", userId
+                                    )).build();
+                                }
                             }
                         } catch (Exception e) {
-                            LOG.errorf("Error verifying invite: %s", e.getMessage());
+                            LOG.errorf("Error verifying status: %s", e.getMessage());
                             return Response.ok(Map.of(
                                 "success", true,
-                                "message", "Registration completed but verification failed: " + e.getMessage(),
-                                "token", invite.getToken()
+                                "message", "Registration completed but status check failed: " + e.getMessage(),
+                                "token", verification.getToken()
                             )).build();
                         }
                     });
@@ -346,6 +399,16 @@ public class TestResource {
     }
     
     @GET
+    @Path("/test-invite-registration-full")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Deprecated
+    public Uni<Response> testInviteRegistrationFull(@QueryParam("email") String email,
+                                         @QueryParam("businessId") String businessId) {
+        LOG.warnf("Using deprecated invite-based registration for email: %s, businessId: %s", email, businessId);
+        return testRegistrationFull(email, businessId);
+    }
+    
+    @GET
     @Path("/debug/collections")
     @Produces(MediaType.APPLICATION_JSON)
     public Response debugCollections() {
@@ -355,7 +418,7 @@ public class TestResource {
             Map<String, Object> result = new HashMap<>();
 
             // List collections and counts
-            for (String collectionName : List.of("users", "business_users", "businesses", "invites")) {
+            for (String collectionName : List.of("users", "business_users", "businesses", "verifications", "invites")) {
                 long count = mongoClient.getDatabase(databaseName)
                     .getCollection(collectionName)
                     .countDocuments();
@@ -363,7 +426,20 @@ public class TestResource {
                 result.put(collectionName + "_count", count);
             }
 
-            // Add some invite data for reference
+            // Add some verification data for reference
+            MongoCollection<Document> verifications = mongoClient.getDatabase(databaseName).getCollection("verifications");
+            List<Map<String, Object>> verificationList = new ArrayList<>();
+            verifications.find().limit(10).forEach(doc -> {
+                Map<String, Object> verification = new HashMap<>();
+                verification.put("token", doc.getString("token"));
+                verification.put("email", doc.getString("email"));
+                verification.put("businessId", doc.getString("businessId"));
+                verification.put("verified", doc.getBoolean("verified", false));
+                verificationList.add(verification);
+            });
+            result.put("recent_verifications", verificationList);
+            
+            // Also add some invite data for backward compatibility reference
             MongoCollection<Document> invites = mongoClient.getDatabase(databaseName).getCollection("invites");
             List<Map<String, Object>> inviteList = new ArrayList<>();
             invites.find().limit(10).forEach(doc -> {
@@ -394,33 +470,74 @@ public class TestResource {
             MongoCollection<Document> users = mongoClient.getDatabase(databaseName).getCollection("users");
 
             Map<String, Object> result = new HashMap<>();
-            Map<String, Object> userMap = new HashMap<>();
+            List<Map<String, Object>> userList = new ArrayList<>();
 
             users.find().forEach(doc -> {
-                String id = doc.getString("id");
+                // Debug document structure
+                LOG.debugf("User document: %s", doc.toJson());
+                
                 Map<String, Object> userData = new HashMap<>();
-                userData.put("email", doc.getString("email"));
-
-                if (doc.containsKey("name")) {
-                    userData.put("name", doc.getString("name"));
+                
+                // Only add valid users with at least some data
+                String id = doc.getString("id");
+                String email = doc.getString("email");
+                
+                // Check document structure
+                if (id == null && email == null) {
+                    if (doc.containsKey("syncHistory")) {
+                        LOG.infof("Found document with syncHistory but no id/email: %s", doc.toJson());
+                    } else {
+                        LOG.warnf("Skipping document with no id and email: %s", doc.toJson());
+                        return; // Skip this document
+                    }
                 }
-
-                if (doc.containsKey("metadata")) {
-                    userData.put("metadata", doc.get("metadata"));
+                
+                // Include all fields explicitly for debugging
+                userData.put("id", id);
+                userData.put("email", email);
+                userData.put("doc_id", doc.getObjectId("_id").toString());
+                
+                // Include all fields that might exist
+                for (String fieldName : doc.keySet()) {
+                    if (!fieldName.equals("_id") && !fieldName.equals("id") && !fieldName.equals("email")) {
+                        Object value = doc.get(fieldName);
+                        if (value != null) {
+                            userData.put(fieldName, value);
+                        }
+                    }
                 }
-
-                userMap.put(id, userData);
+                
+                // Add to list
+                userList.add(userData);
             });
 
-            result.put("users", userMap);
-            result.put("count", userMap.size());
+            result.put("users", userList);
+            result.put("count", userList.size());
+            
+            // Add raw user data for debugging
+            List<Document> rawDocs = new ArrayList<>();
+            users.find().limit(10).forEach(doc -> {
+                Document sanitized = new Document();
+                for (Map.Entry<String, Object> entry : doc.entrySet()) {
+                    if (entry.getValue() != null) {
+                        sanitized.append(entry.getKey(), entry.getValue().toString());
+                    } else {
+                        sanitized.append(entry.getKey(), "null");
+                    }
+                }
+                rawDocs.add(sanitized);
+            });
+            result.put("raw_data", rawDocs);
 
-            LOG.infof("Found %d users", userMap.size());
+            LOG.infof("Found %d users", userList.size());
             return Response.ok(result).build();
 
         } catch (Exception e) {
             LOG.errorf("Error listing users: %s", e.getMessage());
-            return Response.serverError().entity(Map.of("error", e.getMessage())).build();
+            return Response.serverError().entity(Map.of(
+                "error", e.getMessage(),
+                "details", e.toString()
+            )).build();
         }
     }
 
@@ -438,31 +555,46 @@ public class TestResource {
                     new Document();
 
             Map<String, Object> result = new HashMap<>();
-            Map<String, Object> userMap = new HashMap<>();
+            List<Map<String, Object>> userList = new ArrayList<>();
 
             businessUsers.find(filter).forEach(doc -> {
-                String id = doc.getString("id");
+                // Debug document structure
+                LOG.debugf("Business user document: %s", doc.toJson());
+                
                 Map<String, Object> userData = new HashMap<>();
-                userData.put("businessId", doc.getString("businessId"));
-                userData.put("email", doc.getString("email"));
-                userData.put("role", doc.getString("role"));
-
-                if (doc.containsKey("name")) {
-                    userData.put("name", doc.getString("name"));
+                
+                // Include MongoDB document ID for reference
+                if (doc.getObjectId("_id") != null) {
+                    userData.put("doc_id", doc.getObjectId("_id").toString());
                 }
-
-                userMap.put(id, userData);
+                
+                // Include all fields that might exist
+                for (String fieldName : doc.keySet()) {
+                    if (!fieldName.equals("_id")) {
+                        Object value = doc.get(fieldName);
+                        if (value != null) {
+                            userData.put(fieldName, value);
+                        } else {
+                            userData.put(fieldName, "null");
+                        }
+                    }
+                }
+                
+                userList.add(userData);
             });
 
-            result.put("business_users", userMap);
-            result.put("count", userMap.size());
+            result.put("business_users", userList);
+            result.put("count", userList.size());
 
-            LOG.infof("Found %d business users", userMap.size());
+            LOG.infof("Found %d business users", userList.size());
             return Response.ok(result).build();
 
         } catch (Exception e) {
             LOG.errorf("Error listing business users: %s", e.getMessage());
-            return Response.serverError().entity(Map.of("error", e.getMessage())).build();
+            return Response.serverError().entity(Map.of(
+                "error", e.getMessage(),
+                "details", e.toString()
+            )).build();
         }
     }
 }
