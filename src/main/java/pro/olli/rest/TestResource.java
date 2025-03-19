@@ -30,7 +30,6 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import pro.olli.models.BusinessUser;
-import pro.olli.models.Invite; // Keep for backward compatibility during migration
 import pro.olli.models.SyncHistoryEntry;
 import pro.olli.models.SyncTask;
 import pro.olli.models.User;
@@ -69,15 +68,6 @@ public class TestResource {
     @ConfigProperty(name = "quarkus.mongodb.database", defaultValue = "olli")
     String databaseName;
 
-    @GET
-    @Path("/get-latest-invite")
-    @Produces(MediaType.TEXT_PLAIN)
-    @Deprecated
-    public Uni<String> getLatestInvite(@QueryParam("email") String email) {
-        // Use the new verification method but still keep the old endpoint name for compatibility
-        return userRepository.getVerificationByEmail(email)
-                .map(verificationOpt -> verificationOpt.map(Verification::getToken).orElse("no-token-found"));
-    }
     
     @GET
     @Path("/get-latest-verification")
@@ -159,14 +149,6 @@ public class TestResource {
         return "OK";
     }
     
-    @GET
-    @Path("/check-invite")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Deprecated
-    public Uni<Response> checkInvite(@QueryParam("token") String token) {
-        // Redirect to verification check with backward compatibility
-        return checkVerification(token);
-    }
     
     @GET
     @Path("/check-verification")
@@ -180,18 +162,10 @@ public class TestResource {
             Document doc = verifications.find(new Document("token", token)).first();
             
             if (doc == null) {
-                // If not found in verifications, check in invites for backward compatibility
-                MongoCollection<Document> invites = mongoClient.getDatabase(databaseName).getCollection("invites");
-                doc = invites.find(new Document("token", token)).first();
-                
-                if (doc == null) {
-                    LOG.warnf("No verification or invite found with token: %s", token);
-                    return Uni.createFrom().item(Response.status(404)
-                        .entity(Map.of("found", false, "message", "No verification found with token: " + token))
-                        .build());
-                } else {
-                    LOG.infof("Found token in legacy invites collection (using backward compatibility)");
-                }
+                LOG.warnf("No verification found with token: %s", token);
+                return Uni.createFrom().item(Response.status(404)
+                    .entity(Map.of("found", false, "message", "No verification found with token: " + token))
+                    .build());
             }
             
             // Extract and return full verification data for inspection
@@ -201,15 +175,11 @@ public class TestResource {
             result.put("email", doc.getString("email"));
             result.put("businessId", doc.getString("businessId"));
             
-            // Handle different field names between Invite and Verification
-            boolean isVerified = doc.containsKey("verified") 
-                ? doc.getBoolean("verified", false) 
-                : doc.getBoolean("claimed", false);
-                
+            boolean isVerified = doc.getBoolean("verified", false);
             result.put("verified", isVerified);
             
             // Add collection info
-            result.put("collection", doc.containsKey("verified") ? "verifications" : "invites");
+            result.put("collection", "verifications");
             
             result.put("role", doc.getString("role"));
             result.put("createdAt", doc.getLong("createdAt"));
@@ -398,15 +368,6 @@ public class TestResource {
             });
     }
     
-    @GET
-    @Path("/test-invite-registration-full")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Deprecated
-    public Uni<Response> testInviteRegistrationFull(@QueryParam("email") String email,
-                                         @QueryParam("businessId") String businessId) {
-        LOG.warnf("Using deprecated invite-based registration for email: %s, businessId: %s", email, businessId);
-        return testRegistrationFull(email, businessId);
-    }
     
     @GET
     @Path("/debug/collections")
@@ -418,7 +379,7 @@ public class TestResource {
             Map<String, Object> result = new HashMap<>();
 
             // List collections and counts
-            for (String collectionName : List.of("users", "business_users", "businesses", "verifications", "invites")) {
+            for (String collectionName : List.of("users", "business_users", "businesses", "verifications")) {
                 long count = mongoClient.getDatabase(databaseName)
                     .getCollection(collectionName)
                     .countDocuments();
@@ -439,18 +400,6 @@ public class TestResource {
             });
             result.put("recent_verifications", verificationList);
             
-            // Also add some invite data for backward compatibility reference
-            MongoCollection<Document> invites = mongoClient.getDatabase(databaseName).getCollection("invites");
-            List<Map<String, Object>> inviteList = new ArrayList<>();
-            invites.find().limit(10).forEach(doc -> {
-                Map<String, Object> invite = new HashMap<>();
-                invite.put("token", doc.getString("token"));
-                invite.put("email", doc.getString("email"));
-                invite.put("businessId", doc.getString("businessId"));
-                invite.put("claimed", doc.getBoolean("claimed", false));
-                inviteList.add(invite);
-            });
-            result.put("recent_invites", inviteList);
 
             return Response.ok(result).build();
 

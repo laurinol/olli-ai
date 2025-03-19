@@ -14,7 +14,6 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import pro.olli.models.Business;
 import pro.olli.models.BusinessUser;
-import pro.olli.models.Invite;
 import pro.olli.models.User;
 import pro.olli.models.Verification;
 import pro.olli.repository.UserRepository;
@@ -337,64 +336,6 @@ public class AuthController {
         );
     }
     
-    // Keep the old method temporarily for backward compatibility during migration
-    private void createBusinessUserAndFinish(String userId, String businessId, String email,
-                                            Invite invite, RegisterRequest registerRequest,
-                                            io.smallrye.mutiny.subscription.UniEmitter<? super Response> emitter) {
-        LOG.infof("STEP 4: Creating business user association for user %s in business %s", userId, businessId);
-
-        // Create business user association
-        BusinessUser businessUser = new BusinessUser(
-            userId,
-            businessId,
-            email,
-            null, // No name provided
-            "admin" // First user is admin
-        );
-
-        userRepository.saveBusinessUser(businessUser).subscribe().with(
-            success -> {
-                LOG.infof("STEP 4: Business user saved successfully");
-
-                // Step 5: Mark invite as claimed
-                LOG.infof("STEP 5: Marking invite as claimed");
-                // Use the withClaimed() method to ensure we get a claimed copy
-                Invite claimedInvite = invite.withClaimed();
-                LOG.infof("STEP 5: Created claimed invite object with token=%s, claimed=%s",
-                        claimedInvite.getToken(), claimedInvite.isClaimed());
-
-                userRepository.saveInvite(claimedInvite).subscribe().with(
-                    v -> {
-                        LOG.infof("STEP 5: Invite marked as claimed");
-
-                        // Step 6: Generate token and return success
-                        LOG.infof("STEP 6: Registration complete, generating JWT");
-                        String jwt = issueJwt(userId);
-                        emitter.complete(Response.ok(Map.of("token", jwt, "userId", userId))
-                            .header("Authorization", "Bearer " + jwt)
-                            .build());
-                    },
-                    err -> {
-                        LOG.errorf("Failed to mark invite as claimed: %s", err.getMessage());
-                        // Continue anyway since the user is created
-                        String jwt = issueJwt(userId);
-                        emitter.complete(Response.ok(Map.of(
-                                "token", jwt,
-                                "userId", userId,
-                                "warning", "User created but invite not marked as claimed"))
-                            .header("Authorization", "Bearer " + jwt)
-                            .build());
-                    }
-                );
-            },
-            err -> {
-                LOG.errorf("Error saving business user: %s", err.getMessage());
-                emitter.complete(Response.status(500)
-                    .entity(Map.of("error", "Failed to save business user: " + err.getMessage()))
-                    .build());
-            }
-        );
-    }
 
     private String generateTemporaryToken() {
         SecureRandom random = new SecureRandom();

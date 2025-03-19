@@ -64,13 +64,13 @@
           }
         },
         {
-          "name": "Register Email/Password",
+          "name": "Register with Token",
           "request": {
             "method": "POST",
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\"email\": \"test@example.com\", \"password\": \"password123\"}",
+              "raw": "{\"email\": \"{{testEmail}}\", \"password\": \"{{testPassword}}\", \"token\": \"{{inviteToken}}\"}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -87,13 +87,85 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\"email\": \"test@example.com\", \"password\": \"password123\"}",
+              "raw": "{\"email\": \"{{testEmail}}\", \"password\": \"{{testPassword}}\"}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
               "raw": "{{baseUrl}}/auth/login",
               "host": ["{{baseUrl}}"],
               "path": ["auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Create Invite",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"{{testEmail}}\", \"businessId\": \"{{businessId}}\"}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/invite",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "invite"]
+            }
+          }
+        },
+        {
+          "name": "Get User Profile",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{jwtToken}}" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Start Local Sync",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{jwtToken}}" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/sync/local?folderId={{folderId}}&businessId={{businessId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "sync", "local"],
+              "query": [
+                { "key": "folderId", "value": "{{folderId}}" },
+                { "key": "businessId", "value": "{{businessId}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Check Sync Status",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{jwtToken}}" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/sync/status?taskId={{taskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "sync", "status"],
+              "query": [
+                { "key": "taskId", "value": "{{taskId}}" }
+              ]
             }
           }
         }
@@ -113,7 +185,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\"prompt\": \"Hello, how are you?\", \"history\": [{\"role\": \"user\", \"content\": \"Hi\"}, {\"role\": \"assistant\", \"content\": \"Hey there\"}]}",
+              "raw": "{\"prompt\": \"What's in the contract with ACME?\", \"history\": []}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -136,6 +208,154 @@
               "raw": "{{baseUrl}}/chat/history",
               "host": ["{{baseUrl}}"],
               "path": ["chat", "history"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Test Integration",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/test-integration/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["test-integration", "health"]
+            }
+          }
+        },
+        {
+          "name": "Get Latest Invite Token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/test-integration/get-latest-invite?email={{testEmail}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["test-integration", "get-latest-invite"],
+              "query": [
+                { "key": "email", "value": "{{testEmail}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Check Queue Task",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/test-integration/check-queue-task?taskId={{taskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["test-integration", "check-queue-task"],
+              "query": [
+                { "key": "taskId", "value": "{{taskId}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Process Sync Task",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/test-integration/process-sync-task?taskId={{taskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["test-integration", "process-sync-task"],
+              "query": [
+                { "key": "taskId", "value": "{{taskId}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Check Invite",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/test-integration/check-invite?token={{inviteToken}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["test-integration", "check-invite"],
+              "query": [
+                { "key": "token", "value": "{{inviteToken}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Test Registration",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/test-integration/test-registration?email={{testEmail}}&businessId={{businessId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["test-integration", "test-registration"],
+              "query": [
+                { "key": "email", "value": "{{testEmail}}" },
+                { "key": "businessId", "value": "{{businessId}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Test Full Registration",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/test-integration/test-registration-full?email={{testEmail}}&businessId={{businessId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["test-integration", "test-registration-full"],
+              "query": [
+                { "key": "email", "value": "{{testEmail}}" },
+                { "key": "businessId", "value": "{{businessId}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Debug Collections",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/test-integration/debug/collections",
+              "host": ["{{baseUrl}}"],
+              "path": ["test-integration", "debug", "collections"]
+            }
+          }
+        },
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/test-integration/list-users",
+              "host": ["{{baseUrl}}"],
+              "path": ["test-integration", "list-users"]
+            }
+          }
+        },
+        {
+          "name": "List Business Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/test-integration/list-business-users?businessId={{businessId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["test-integration", "list-business-users"],
+              "query": [
+                { "key": "businessId", "value": "{{businessId}}" }
+              ]
             }
           }
         }
@@ -177,6 +397,36 @@
       "key": "jwtToken",
       "value": "your-jwt-token-here",
       "description": "JWT token from auth (replace after login/register)"
+    },
+    {
+      "key": "testEmail",
+      "value": "test@example.com",
+      "description": "Test email for registration/login"
+    },
+    {
+      "key": "testPassword",
+      "value": "password123",
+      "description": "Test password for registration/login"
+    },
+    {
+      "key": "businessId",
+      "value": "test-business-123",
+      "description": "Test business ID"
+    },
+    {
+      "key": "inviteToken",
+      "value": "test-invite-token",
+      "description": "Invite token for registration"
+    },
+    {
+      "key": "folderId",
+      "value": "test-files",
+      "description": "Folder ID for sync"
+    },
+    {
+      "key": "taskId",
+      "value": "test-task-123",
+      "description": "Task ID for sync operations"
     }
   ]
 }

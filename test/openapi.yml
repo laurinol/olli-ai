@@ -24,8 +24,8 @@ paths:
   
   /auth/invite:
     post:
-      summary: Create Business Invite
-      description: Creates an invitation for a user to join a business.
+      summary: Create Email Verification
+      description: Creates a verification link for a user to verify their email during registration. Endpoint name maintained for backward compatibility.
       requestBody:
         required: true
         content:
@@ -43,7 +43,7 @@ paths:
                 - businessId
       responses:
         '200':
-          description: Invite created successfully
+          description: Verification created successfully
           content:
             application/json:
               schema:
@@ -51,7 +51,7 @@ paths:
                 properties:
                   message:
                     type: string
-                    example: "Invite sent"
+                    example: "Verification email sent"
         '400':
           description: Invalid request
         '500':
@@ -60,7 +60,7 @@ paths:
   /auth/register:
     post:
       summary: Register User
-      description: Registers a new user with email, password, and invite token.
+      description: Registers a new user with email, password, and verification token.
       requestBody:
         required: true
         content:
@@ -76,7 +76,7 @@ paths:
                   format: password
                 token:
                   type: string
-                  description: Invite token
+                  description: Verification token
               required:
                 - email
                 - password
@@ -414,10 +414,10 @@ paths:
           description: History fetch failed
 
   # Test endpoints (not available in production)
-  /test/get-latest-invite:
+  /test-integration/get-latest-verification:
     get:
-      summary: Get Latest Invite Token (Test Only)
-      description: Retrieves the latest invite token for testing purposes. Not available in production.
+      summary: Get Latest Verification Token (Test Only)
+      description: Retrieves the latest verification token for testing purposes. Not available in production.
       parameters:
         - name: email
           in: query
@@ -426,7 +426,26 @@ paths:
             type: string
       responses:
         '200':
-          description: Invite token
+          description: Verification token
+          content:
+            text/plain:
+              schema:
+                type: string
+                
+  /test-integration/get-latest-invite:
+    get:
+      summary: Get Latest Invite Token (Test Only - Deprecated)
+      description: Deprecated. Retrieves the latest verification token for testing purposes using old terminology. Not available in production.
+      deprecated: true
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verification token
           content:
             text/plain:
               schema:
@@ -478,6 +497,268 @@ paths:
                   taskId:
                     type: string
 
+  /invitations:
+    post:
+      summary: Create Team Invitation
+      description: Creates an invitation for a user to join a business team.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                businessId:
+                  type: string
+                role:
+                  type: string
+                  enum: [admin, user]
+              required:
+                - email
+                - businessId
+                - role
+      responses:
+        '200':
+          description: Invitation created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+                  businessId:
+                    type: string
+                  role:
+                    type: string
+                  sentBy:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+        '403':
+          description: Not authorized to create invitations
+        '500':
+          description: Server error
+
+    get:
+      summary: Get Business Invitations
+      description: Gets all invitations for a specific business.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of invitations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invitation'
+        '403':
+          description: Not authorized to view invitations
+        '500':
+          description: Server error
+  
+  /invitations/pending:
+    get:
+      summary: Get Pending Invitations
+      description: Gets all pending invitations for a specific business.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of pending invitations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invitation'
+        '403':
+          description: Not authorized to view invitations
+        '500':
+          description: Server error
+  
+  /invitations/check:
+    get:
+      summary: Check Invitations for Email
+      description: Checks if an email has any pending invitations.
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+      responses:
+        '200':
+          description: List of invitations for email
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    businessId:
+                      type: string
+                    role:
+                      type: string
+                    expiresAt:
+                      type: integer
+                      format: int64
+        '400':
+          description: Invalid request
+        '500':
+          description: Server error
+  
+  /invitations/{id}:
+    get:
+      summary: Get Invitation Details
+      description: Gets details of a specific invitation.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '403':
+          description: Not authorized to view invitation
+        '404':
+          description: Invitation not found
+        '500':
+          description: Server error
+    
+    delete:
+      summary: Cancel Invitation
+      description: Cancels (deletes) a specific invitation.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '403':
+          description: Not authorized to cancel invitation
+        '404':
+          description: Invitation not found
+        '500':
+          description: Server error
+  
+  /invitations/{id}/accept:
+    post:
+      summary: Accept Invitation
+      description: Accepts an invitation to join a business team.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation accepted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  businessId:
+                    type: string
+                  role:
+                    type: string
+        '400':
+          description: Invalid request (expired invitation)
+        '403':
+          description: Not authorized to accept invitation
+        '404':
+          description: Invitation not found
+        '500':
+          description: Server error
+  
+  /invitations/{id}/resend:
+    post:
+      summary: Resend Invitation Email
+      description: Resends the invitation email for a specific invitation.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation email resent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+        '400':
+          description: Invalid request (expired or accepted invitation)
+        '403':
+          description: Not authorized to resend invitation
+        '404':
+          description: Invitation not found
+        '500':
+          description: Server error
+
 components:
   schemas:
     User:
@@ -491,7 +772,7 @@ components:
           format: password
         token:
           type: string
-          description: Invite token (only for registration)
+          description: Verification token (only for registration)
         businessId:
           type: string
           description: Business ID (only for OAuth login)
@@ -527,7 +808,7 @@ components:
         - businessId
         - role
 
-    Invite:
+    Verification:
       type: object
       properties:
         token:
@@ -536,9 +817,72 @@ components:
           type: string
         businessId:
           type: string
+        verified:
+          type: boolean
+          description: Whether the email has been verified
+        expiresAt:
+          type: string
+          format: date-time
+          description: Expires after 48 hours
+      required:
+        - token
+        - email
+        - businessId
+        - verified
+        
+    Invitation:
+      type: object
+      properties:
+        id:
+          type: string
+        businessId:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, user]
+        sentByUserId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: Expires after 7 days
+        accepted:
+          type: boolean
+          description: Whether the invitation has been accepted
+      required:
+        - id
+        - businessId
+        - email
+        - role
+        - sentByUserId
+        - createdAt
+        - expiresAt
+        - accepted
+        
+    Invite:
+      type: object
+      deprecated: true
+      description: Deprecated. Use Verification instead for email verification flows.
+      properties:
+        token:
+          type: string
+        email:
+          type: string
+        businessId:
+          type: string
+        claimed:
+          type: boolean
+          description: Whether the invitation has been claimed
         expires:
           type: string
           format: date-time
+          description: Expires after 7 days
       required:
         - token
         - email

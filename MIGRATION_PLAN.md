@@ -27,16 +27,35 @@ This document outlines our plan for migrating from the misused `Invite` system t
 - ✅ Update collection debug endpoints to include verifications
 - ✅ Update integration tests to use the new verification system
 
-### Phase 3: Frontend and Email Templates (🔄)
+### Phase 3: Frontend and Email Templates (✅)
 
-- ❌ Update "Invites" language in frontend to use "Verification" for email verification
+- ❌ Update "Invites" language in frontend to use "Verification" for email verification (pending frontend repository access)
 - ✅ Update email templates and subject lines to properly reflect verification purpose
+- ✅ Update OpenAPI specification to use "Verification" terminology instead of "Invite"
+- ✅ Create migration guide for frontend team (FRONTEND_MIGRATION.md)
 
-### Phase 4: Cleanup and New Invitation System (❌)
+### Phase 4: Cleanup and New Invitation System (✅)
 
-- ❌ Remove deprecated methods in UserRepository after confirming all code is migrated
-- ❌ Implement a proper Invitation system for team members
-- ❌ Update API documentation and endpoint paths
+- ✅ Remove deprecated methods in UserRepository after confirming all code is migrated
+- ✅ Create placeholder for proper Invitation model for team members
+- ✅ Update API documentation and endpoint paths
+
+### Phase 5: Team Invitation System (✅)
+
+- ✅ Implement InvitationRepository interface and MongoDB/Firestore implementations
+- ✅ Create InvitationController for sending and accepting team invitations
+- ✅ Add endpoints for listing, sending and accepting team invitations
+- ✅ Update OpenAPI specification for team invitation endpoints
+- ✅ Create test script and documentation for the invitation system
+- ❌ Create frontend components for team invitation management (pending frontend repository access)
+
+## Completed Migration
+
+✅ We have now successfully completed the migration from misused "Invite" to:
+1. A proper "Verification" system for email verification during registration
+2. A separate "Invitation" system for team invitations with appropriate security controls
+
+The only remaining task is to implement the frontend components once that repository becomes available.
 
 ## Testing
 
