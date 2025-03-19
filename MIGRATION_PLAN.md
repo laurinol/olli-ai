@@ -30,7 +30,7 @@ This document outlines our plan for migrating from the misused `Invite` system t
 ### Phase 3: Frontend and Email Templates (🔄)
 
 - ❌ Update "Invites" language in frontend to use "Verification" for email verification
-- ❌ Update email templates and subject lines to properly reflect verification purpose
+- ✅ Update email templates and subject lines to properly reflect verification purpose
 
 ### Phase 4: Cleanup and New Invitation System (❌)
 
