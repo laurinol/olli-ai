@@ -1,11 +1,11 @@
 # Olli AI 
 
-Welcome to the backend of **Olli AI**, a Quarkus-based application designed to sync and process documents from multiple storage providers for small to medium businesses (SMBs). This service supports a $99/month subscription model, targeting businesses with up to 39,000 documents, operating within a $85-$90/month operational cost.
+Welcome to the backend of **Olli AI**, a Quarkus-based application designed to sync and process documents from multiple connectors for small to medium businesses (SMBs). This service supports a $99/month subscription model, targeting businesses with up to 39,000 documents, operating within a $85-$90/month operational cost.
 
 ## Features
 - **Multi-Provider Sync**: Integrates with Google Drive, Dropbox, OneDrive, S3, SFTP, Samba (Network), and Local filesystem—flexible document ingestion.
 - **Multi-User Support**: Businesses register with a `businessId`—employees have individual logins (`userId`) via Google OAuth—sync history tracked per user.
-- **Scalable RAG Pipeline**: Retrieval-Augmented Generation—processes up to 39,000 documents—optimized embeddings with Vertex AI and Firestore storage.
+- **Scalable RAG Pipeline**: Retrieval-Augmented Generation—processes up to 39,000 documents—optimized embeddings with Vertex AI and Firestore connectors.
 - **Cloud Tasks**: Asynchronous task queuing—robust sync operations—scalable for SMBs.
 
 ## Tech Stack
@@ -113,7 +113,7 @@ mvn clean install
 - **SyncResource**: REST endpoint—handles sync requests—passes `businessId`, `userId`—your `$99/month` app’s entry—scalable.
 - **SyncService**: Queues tasks—Cloud Tasks—updates Firestore history—your `$85-$90/month` pipeline—reactive—tracks per employee—39,000-doc capacity.
 - **SyncWorker**: Processes tasks—fetches user creds—syncs files—your multi-provider core—robust—efficient.
-- **Storage Providers**: Google Drive, Local, etc.—interface-driven—your app—flexible—extends easily—Samba, SFTP—your SMBs—covered.
+- **Connectors**: Google Drive, Local, etc.—interface-driven—your app—flexible—extends easily—Samba, SFTP—your SMBs—covered.
 - **Firestore**: `clients/<businessId>/users/<userId>`—stores data, history—your `$85-$90/month` cost—optimized—scalable.
 
 ## Monitoring and Metrics
@@ -123,7 +123,7 @@ Olli AI includes comprehensive monitoring and metrics to ensure system health an
 ### Available Metrics
 - **API Performance**: Track request duration, response codes, and throughput—identify slow endpoints.
 - **Database Operations**: Monitor Firestore read/write times, error rates—optimize queries.
-- **Storage Operations**: Track file sync times across providers—Google Drive, S3, SFTP, etc.
+- **Connector Operations**: Track file sync times across providers—Google Drive, S3, SFTP, etc.
 - **AI Service Performance**: Monitor embedding generation time—detect Vertex AI slowdowns.
 - **Circuit Breaker States**: Track when services degrade—automatic fault detection.
 - **Sync Task Processing**: Monitor files processed, processing rates, and timing—track your 39,000-doc pipeline.

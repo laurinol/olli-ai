@@ -25,19 +25,19 @@ public @interface Timed {
      */
     @Nonbinding
     String value() default "";
-    
+
     /**
      * The type of operation being performed. This helps categorize metrics.
      */
     @Nonbinding
     OperationType type() default OperationType.OTHER;
-    
+
     /**
      * Types of operations that can be timed.
      */
     enum OperationType {
         DATABASE,
-        STORAGE,
+        CONNECTOR,
         AI_SERVICE,
         API_CALL,
         EXTERNAL_SERVICE,

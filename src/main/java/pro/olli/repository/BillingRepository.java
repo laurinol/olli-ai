@@ -50,5 +50,5 @@ public interface BillingRepository {
     /**
      * Updates business usage metrics
      */
-    Uni<Void> updateBusinessUsage(String businessId, int storageBytes, int documentsProcessed, int queriesExecuted);
+    Uni<Void> updateBusinessUsage(String businessId, int connectorBytes, int documentsProcessed, int queriesExecuted);
 }

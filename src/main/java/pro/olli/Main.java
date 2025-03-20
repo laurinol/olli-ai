@@ -8,18 +8,18 @@ import io.quarkus.runtime.QuarkusApplication;
 import io.quarkus.runtime.annotations.QuarkusMain;
 import org.jboss.logging.Logger;
 import pro.olli.service.SyncService;
-import pro.olli.storage.StorageFactory;
+import pro.olli.connector.ConnectorFactory;
 
 @QuarkusMain
 public class Main implements QuarkusApplication {
 
     private static final Logger LOG = Logger.getLogger(Main.class);
     private final SyncService syncService;
-    private final StorageFactory storageFactory;
+    private final ConnectorFactory connectorFactory;
 
-    public Main(SyncService syncService, StorageFactory storageFactory) {
+    public Main(SyncService syncService, ConnectorFactory connectorFactory) {
         this.syncService = syncService;
-        this.storageFactory = storageFactory;
+        this.connectorFactory = connectorFactory;
     }
 
     public static void main(String[] args) {
@@ -29,7 +29,7 @@ public class Main implements QuarkusApplication {
     @Override
     public int run(String... args) {
         LOG.info("Olli AI application starting...");
-        LOG.infof("Registered storage providers: %s", storageFactory.getSupportedProviders());
+        LOG.infof("Registered connector providers: %s", connectorFactory.getSupportedProviders());
         Quarkus.waitForExit();
         return 0;
     }

@@ -1,0 +1,112 @@
+@startuml Olli AI Application Flow Diagram
+
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam arrowColor #666666
+skinparam shadowing false
+skinparam roundCorner 20
+
+skinparam activity {
+  BackgroundColor #E1F5FE
+  BorderColor #0288D1
+  StartColor #4CAF50
+  EndColor #F44336
+  DiamondBackgroundColor #FFF9C4
+  DiamondBorderColor #FFC107
+}
+
+title Olli AI Platform - Main User Flow
+
+|User|
+start
+:Visit Landing Page;
+
+:Register Account;
+:Verify Email;
+:Login;
+
+|Authentication|
+:Validate Credentials;
+:Generate JWT Token;
+:Load User Profile;
+
+|User|
+if (First Time User?) then (yes)
+  :Create New Business;
+  :Select Subscription Plan;
+  |Billing|
+  :Process Payment;
+  :Activate Subscription;
+  |User|
+else (no)
+  :View Dashboard;
+endif
+
+|User|
+split
+  :Manage Team;
+  |Team Management|
+  :View Team Members;
+  :Invite New Members;
+  :Manage Roles & Permissions;
+  |User|
+split again
+  :Configure Connector;
+  |Connector|
+  :Connect Connector;
+  :Set Sync Parameters;
+  |User|
+split again
+  :Manage Subscription;
+  |Billing|
+  :View Current Plan;
+  :View Usage Metrics;
+  :Change Subscription;
+  |User|
+end split
+
+|User|
+:Start File Sync;
+|Sync Service|
+:Process Sync Request;
+:Queue Sync Tasks;
+:Execute Tasks;
+if (Success?) then (yes)
+  :Update Sync Status;
+  :Record Sync History;
+else (no)
+  :Log Error;
+  :Send Notification;
+endif
+|User|
+
+:Browse Synced Files;
+:Search Content;
+
+|Search Service|
+:Process Search Query;
+:Retrieve Results;
+if (AI Features?) then (yes)
+  :Generate AI Insights;
+  :Provide Document Summaries;
+endif
+|User|
+
+:View Search Results;
+:Interact with Documents;
+:Download or Share Files;
+
+|User|
+if (Admin User?) then (yes)
+  :Access Admin Functions;
+  |Admin|
+  :View System Analytics;
+  :Manage Users;
+  :Configure Settings;
+  |User|
+endif
+
+stop
+
+@enduml

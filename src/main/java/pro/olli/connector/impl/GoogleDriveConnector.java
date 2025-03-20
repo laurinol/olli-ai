@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
 
-package pro.olli.storage.impl;
+package pro.olli.connector.impl;
 
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
@@ -13,33 +13,33 @@ import com.google.auth.oauth2.GoogleCredentials;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
-import pro.olli.models.StorageCredentials;
-import pro.olli.storage.StorageProvider;
+import pro.olli.models.ConnectorCredentials;
+import pro.olli.connector.Connector;
 
 import java.io.InputStream;
 import java.util.List;
 import java.util.stream.Collectors;
-import pro.olli.storage.StorageProviderType;
+import pro.olli.connector.ConnectorType;
 
 /**
- * Google Drive implementation of StorageProvider.
+ * Google Drive implementation of Connector.
  */
 @ApplicationScoped
-public class GoogleDriveProvider implements StorageProvider {
+public class GoogleDriveConnector implements Connector {
 
-    private static final Logger LOG = Logger.getLogger(GoogleDriveProvider.class);
+    private static final Logger LOG = Logger.getLogger(GoogleDriveConnector.class);
 
     private Drive driveService;
 
-    public GoogleDriveProvider() {
+    public GoogleDriveConnector() {
         this.driveService = null;
     }
 
     @Override
-    public Uni<Boolean> authenticate(StorageCredentials credentials) {
+    public Uni<Boolean> authenticate(ConnectorCredentials credentials) {
         return Uni.createFrom().emitter(emitter -> {
             try {
-                // Fetch access token from StorageCredentials or .env for local dev
+                // Fetch access token from ConnectorCredentials or .env for local dev
                 String accessToken = (String) credentials.get("accessToken");
                 if (accessToken == null) {
                     accessToken = System.getenv("GOOGLE_ACCESS_TOKEN"); // Local dev fallback
@@ -111,7 +111,7 @@ public class GoogleDriveProvider implements StorageProvider {
     }
 
     @Override
-    public StorageProviderType getProviderType() {
-        return StorageProviderType.GOOGLE;
+    public ConnectorType getProviderType() {
+        return ConnectorType.GOOGLE;
     }
 }

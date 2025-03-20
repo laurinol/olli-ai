@@ -44,8 +44,8 @@ import pro.olli.ai.EmbeddingService;
 import pro.olli.core.resilience.exception.AppException;
 import pro.olli.models.SyncTask;
 import pro.olli.queue.TaskQueueService;
-import pro.olli.storage.StorageFactory;
-import pro.olli.storage.StorageProvider;
+import pro.olli.connector.Connector;
+import pro.olli.connector.ConnectorFactory;
 
 @ApplicationScoped
 @Startup
@@ -71,7 +71,7 @@ public class SyncWorker {
     @ConfigProperty(name = "app.worker.multiplier", defaultValue = "4")
     int workerMultiplier;
 
-    private final StorageFactory storageFactory;
+    private final ConnectorFactory connectorFactory;
     private final EmbeddingService embeddingService;  // @Named("ollamaEmbedding") would fix injection
     private final TaskQueueService taskQueueService;
     private final BillingService billingService;
@@ -81,12 +81,12 @@ public class SyncWorker {
     private final int workerCount = Math.max(1, Runtime.getRuntime().availableProcessors() * workerMultiplier);
 
     @Inject
-    public SyncWorker(StorageFactory storageFactory,
+    public SyncWorker(ConnectorFactory connectorFactory,
                      EmbeddingService embeddingService,
                      TaskQueueService taskQueueService,
                      BillingService billingService,
                      IndexServiceClient indexServiceClient) {
-        this.storageFactory = storageFactory;
+        this.connectorFactory = connectorFactory;
         this.embeddingService = embeddingService;
         this.taskQueueService = taskQueueService;
         this.billingService = billingService;
@@ -180,7 +180,7 @@ public class SyncWorker {
                 String source = taskData.getSource();
                 String folderId = taskData.getFolderId();
 
-                StorageProvider provider = storageFactory.getProvider(source);
+                Connector provider = connectorFactory.getProvider(source);
                 if (provider == null) {
                     LOG.errorf("Unsupported source %s for task %s", source, taskId);
                     emitter.fail(new IllegalArgumentException("Unsupported source: " + source));
@@ -236,7 +236,7 @@ public class SyncWorker {
         retryOn = {Exception.class},
         abortOn = {AppException.class})
     @Fallback(fallbackMethod = "processingFileFallback")
-    protected Uni<Void> processFile(StorageProvider provider, String file, String taskId, String businessId,
+    protected Uni<Void> processFile(Connector provider, String file, String taskId, String businessId,
         String userId) {
         LOG.infof("Processing sync file %s", file);
         return provider.downloadFile(file)
@@ -302,7 +302,7 @@ public class SyncWorker {
         };
     }
 
-    protected Uni<Void> processingFileFallback(StorageProvider provider, String file, String taskId,
+    protected Uni<Void> processingFileFallback(Connector provider, String file, String taskId,
         String businessId, String userId, Throwable cause) {
         LOG.warnf("Falling back on file processing for %s due to: %s", file, cause.getMessage());
         // Record the failure
@@ -354,7 +354,7 @@ public class SyncWorker {
                 LOG.infof("Stored embedding for file %s in Vector Search for task %s", file, taskId);
                 emitter.complete(null);
             } catch (Exception e) {
-                String errorMsg = "Vector search storage failed for " + file;
+                String errorMsg = "Vector search connector failed for " + file;
                 LOG.error(errorMsg, e);
                 emitter.fail(new AppException(errorMsg, e, AppException.ErrorType.EXTERNAL_SERVICE_ERROR));
             }
@@ -363,7 +363,7 @@ public class SyncWorker {
 
     protected Uni<Void> storeInVectorSearchFallback(List<Float> embedding, String file,
         String taskId, String businessId, String userId, Throwable cause) {
-        LOG.warnf("Vector search storage fallback for %s: %s", file, cause.getMessage());
+        LOG.warnf("Vector search connector fallback for %s: %s", file, cause.getMessage());
         // Store in a backup location or queue for retry
         return storeEmbeddingForLaterRetry(embedding, file, taskId, businessId, userId);
     }

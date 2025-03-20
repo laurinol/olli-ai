@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
 
-package pro.olli.storage.impl;
+package pro.olli.connector.impl;
 
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.JSch;
@@ -10,34 +10,34 @@ import com.jcraft.jsch.Session;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
-import pro.olli.models.StorageCredentials;
-import pro.olli.storage.StorageProvider;
+import pro.olli.models.ConnectorCredentials;
+import pro.olli.connector.Connector;
 
 import java.io.InputStream;
 import java.util.Base64;
 import java.util.List;
 import java.util.Vector;
 import java.util.stream.Collectors;
-import pro.olli.storage.StorageProviderType;
+import pro.olli.connector.ConnectorType;
 
 /**
- * SFTP implementation of StorageProvider with SSH key auth.
+ * SFTP implementation of Connector with SSH key auth.
  */
 @ApplicationScoped
-public class SftpProvider implements StorageProvider {
+public class SftpConnector implements Connector {
 
-    private static final Logger LOG = Logger.getLogger(SftpProvider.class);
+    private static final Logger LOG = Logger.getLogger(SftpConnector.class);
 
     private final JSch jsch;
-    private StorageCredentials credentials;
+    private ConnectorCredentials credentials;
 
-    public SftpProvider() {
+    public SftpConnector() {
         this.jsch = new JSch();
         this.credentials = null;
     }
 
     @Override
-    public Uni<Boolean> authenticate(StorageCredentials credentials) {
+    public Uni<Boolean> authenticate(ConnectorCredentials credentials) {
         return Uni.createFrom().emitter(emitter -> {
             Session session = null; // Declare outside try for cleanup
             try {
@@ -128,7 +128,7 @@ public class SftpProvider implements StorageProvider {
     }
 
     @Override
-    public StorageProviderType getProviderType() {
-        return StorageProviderType.SFTP;
+    public ConnectorType getProviderType() {
+        return ConnectorType.SFTP;
     }
 }

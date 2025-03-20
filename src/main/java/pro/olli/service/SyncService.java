@@ -19,16 +19,16 @@ import pro.olli.models.SyncTask;
 import pro.olli.queue.TaskQueueService;
 import pro.olli.repository.Factory;
 import pro.olli.repository.SyncRepository;
-import pro.olli.storage.StorageFactory;
-import pro.olli.storage.StorageProvider;
+import pro.olli.connector.ConnectorFactory;
+import pro.olli.connector.Connector;
 
 @Startup
 @ApplicationScoped
 public class SyncService {
     private static final Logger LOG = Logger.getLogger(SyncService.class);
-    
+
     private final TaskQueueService taskQueueService;
-    private final StorageFactory storageFactory;
+    private final ConnectorFactory connectorFactory;
     private final SyncRepository syncRepository;
     private final Gson gson;
     private final String projectId;
@@ -37,14 +37,14 @@ public class SyncService {
 
     public SyncService(
         TaskQueueService taskQueueService,
-        StorageFactory storageFactory,
+        ConnectorFactory connectorFactory,
         @Factory SyncRepository syncRepository,
         Gson gson,
         TracingService tracingService,
         @ConfigProperty(name = "quarkus.google.cloud.project-id", defaultValue = "olli-ai") String projectId,
         @ConfigProperty(name = "quarkus.google.cloud.location", defaultValue = "us-west1") String location) {
         this.taskQueueService = taskQueueService;
-        this.storageFactory = storageFactory;
+        this.connectorFactory = connectorFactory;
         this.syncRepository = syncRepository;
         this.gson = gson;
         this.tracingService = tracingService;
@@ -61,18 +61,18 @@ public class SyncService {
             span.setAttribute("user.id", userId);
             span.setAttribute("sync.source", source);
             span.setAttribute("sync.directory", directory);
-            
+
             return doSync(businessId, userId, source, directory);
         }, Map.of("operation", "sync_folder"));
     }
-    
+
     /**
      * Internal method for sync operation, to be called after trace context setup
      */
     private Uni<String> doSync(String businessId, String userId, String source, String directory) {
         return Uni.createFrom().emitter(emitter -> {
             Span span = Span.current();
-            
+
             // Record the sync attempt
             tracingService.addEvent("sync_started", Map.of(
                 "businessId", businessId,
@@ -80,37 +80,37 @@ public class SyncService {
                 "source", source,
                 "directory", directory
             ));
-            
-            StorageProvider provider = storageFactory.getProvider(source);
+
+            Connector provider = connectorFactory.getProvider(source);
             if (provider == null) {
                 String errorMsg = "Unsupported source: " + source;
                 LOG.errorf("Unsupported source: %s for client %s, user %s", source, businessId, userId);
-                
+
                 // Record the error in the span
                 span.setAttribute("error", true);
                 span.setAttribute("error.type", "unsupported_source");
                 span.setAttribute("error.message", errorMsg);
-                
+
                 emitter.complete(errorMsg);
                 return;
             }
 
             String taskId = UUID.randomUUID().toString();
             span.setAttribute("sync.task_id", taskId);
-            
+
             SyncTask taskData = new SyncTask(businessId, userId, source, directory);
             String jsonPayload = gson.toJson(taskData);
-            
+
             // Record enqueue event
             tracingService.addEvent("task_enqueued", Map.of("taskId", taskId));
-            
+
             taskQueueService.enqueueTask(taskId, jsonPayload)
                 .onItem().invoke(v -> {
                     // Record successful queue operation
                     tracingService.addEvent("task_enqueue_success", Map.of("taskId", taskId));
-                    
+
                     SyncHistoryEntry historyEntry = new SyncHistoryEntry(taskId, Instant.now(), source, directory, 0, "queued", null);
-                    
+
                     // Add trace context to the async operation
                     syncRepository.appendSyncHistory(businessId, userId, historyEntry)
                         .invoke(() -> {

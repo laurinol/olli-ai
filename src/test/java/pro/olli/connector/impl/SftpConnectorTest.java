@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
 
-package pro.olli.storage.impl;
+package pro.olli.connector.impl;
 
 import com.jcraft.jsch.*;
 import io.quarkus.test.junit.QuarkusTest;
@@ -12,7 +12,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import pro.olli.models.StorageCredentials;
+import pro.olli.models.ConnectorCredentials;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @QuarkusTest
-class SftpProviderTest {
+class SftpConnectorTest {
 
     @ConfigProperty(name = "sftp.username", defaultValue = "testuser")
     String userName;
@@ -40,14 +40,14 @@ class SftpProviderTest {
     @ConfigProperty(name = "sftp.path", defaultValue = "/config/test-files")
     String path;
 
-    private SftpProvider sftpProvider;
+    private SftpConnector sftpConnector;
     private JSch mockJSch;
     private Session mockSession;
     private ChannelSftp mockChannel;
 
     @BeforeEach
     void setUp() throws JSchException {
-        sftpProvider = new SftpProvider();
+        sftpConnector = new SftpConnector();
 
         // Mock JSch and its dependencies
         mockJSch = mock(JSch.class);
@@ -61,7 +61,7 @@ class SftpProviderTest {
 
     @Test
     void testAuthenticateSuccess() throws JSchException {
-        StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
+        ConnectorCredentials creds = new ConnectorCredentials(new HashMap<String, Object>() {{
             put("username", userName);
             put("password", password);
             put("host", host);
@@ -76,7 +76,7 @@ class SftpProviderTest {
         try (var mockedStatic = Mockito.mockStatic(JSch.class)) {
             mockedStatic.when(JSch::new).thenReturn(mockJSch);
 
-            Uni<Boolean> authUni = sftpProvider.authenticate(creds);
+            Uni<Boolean> authUni = sftpConnector.authenticate(creds);
             Boolean result = authUni.await().indefinitely();
 
             assertTrue(result);
@@ -87,7 +87,7 @@ class SftpProviderTest {
 
     @Test
     void testAuthenticateFailure() throws JSchException {
-        StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
+        ConnectorCredentials creds = new ConnectorCredentials(new HashMap<String, Object>() {{
             put("username", userName);
             put("password", "incorrect_password");
             put("host", host);
@@ -100,7 +100,7 @@ class SftpProviderTest {
         try (var mockedStatic = Mockito.mockStatic(JSch.class)) {
             mockedStatic.when(JSch::new).thenReturn(mockJSch);
 
-            Uni<Boolean> authUni = sftpProvider.authenticate(creds);
+            Uni<Boolean> authUni = sftpConnector.authenticate(creds);
             Boolean result = authUni.await().indefinitely();
 
             assertFalse(result);
@@ -111,7 +111,7 @@ class SftpProviderTest {
 
     @Test
     void testListFilesSuccess() throws Exception {
-        StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
+        ConnectorCredentials creds = new ConnectorCredentials(new HashMap<String, Object>() {{
             put("username", userName);
             put("password", password);
             put("host", host);
@@ -136,8 +136,8 @@ class SftpProviderTest {
         try (var mockedStatic = Mockito.mockStatic(JSch.class)) {
             mockedStatic.when(JSch::new).thenReturn(mockJSch);
 
-            sftpProvider.authenticate(creds).await().indefinitely();
-            Uni<List<String>> filesUni = sftpProvider.listFiles(path);
+            sftpConnector.authenticate(creds).await().indefinitely();
+            Uni<List<String>> filesUni = sftpConnector.listFiles(path);
             List<String> files = filesUni.await().indefinitely();
 
             assertEquals(1, files.size());
@@ -148,7 +148,7 @@ class SftpProviderTest {
 
     @Test
     void testDownloadFileSuccess() throws Exception {
-        StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
+        ConnectorCredentials creds = new ConnectorCredentials(new HashMap<String, Object>() {{
             put("username", userName);
             put("password", password);
             put("host", host);
@@ -167,8 +167,8 @@ class SftpProviderTest {
         try (var mockedStatic = Mockito.mockStatic(JSch.class)) {
             mockedStatic.when(JSch::new).thenReturn(mockJSch);
 
-            sftpProvider.authenticate(creds).await().indefinitely();
-            Uni<InputStream> streamUni = sftpProvider.downloadFile("/testfolder/test.txt");
+            sftpConnector.authenticate(creds).await().indefinitely();
+            Uni<InputStream> streamUni = sftpConnector.downloadFile("/testfolder/test.txt");
             InputStream stream = streamUni.await().indefinitely();
 
             assertNotNull(stream);

@@ -48,7 +48,7 @@ Prerequisites:
 
 ### 2. Document Synchronization
 
-**Goal**: Verify documents can be synced from a storage provider.
+**Goal**: Verify documents can be synced from a connector.
 
 **Steps**:
 1. Add local directory for scanning
@@ -104,7 +104,7 @@ The test should run through all steps in sequence, with each step depending on t
 ## Extending the Tests
 
 Additional tests can verify:
-- Multiple storage providers
+- Multiple connectors
 - Error handling scenarios
 - Different document types
 - Authorization boundaries
@@ -113,7 +113,7 @@ Additional tests can verify:
 
 The test verifies:
 1. End-to-end functional flow works correctly
-2. Document synchronization works from storage to embedded vector database
+2. Document synchronization works from connector to embedded vector database
 3. RAG queries correctly retrieve and process document information
 
 This test plan serves as a blueprint for implementing automated integration tests and can also be used for manual verification.

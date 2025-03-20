@@ -2,12 +2,12 @@
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
 
-package pro.olli.storage;
+package pro.olli.connector;
 
 /**
- * Enum representing supported storage providers.
+ * Enum representing supported connector providers.
  */
-public enum StorageProviderType {
+public enum ConnectorType {
     LOCAL("local"),
     NETWORK("network"),  // Samba
     GOOGLE("google"),
@@ -18,7 +18,7 @@ public enum StorageProviderType {
 
     private final String value;
 
-    StorageProviderType(String value) {
+    ConnectorType(String value) {
         this.value = value;
     }
 
@@ -26,8 +26,8 @@ public enum StorageProviderType {
         return value;
     }
 
-    public static StorageProviderType fromString(String value) {
-        for (StorageProviderType type : values()) {
+    public static ConnectorType fromString(String value) {
+        for (ConnectorType type : values()) {
             if (type.value.equalsIgnoreCase(value)) {
                 return type;
             }

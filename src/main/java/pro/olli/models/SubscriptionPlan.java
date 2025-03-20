@@ -13,16 +13,16 @@ public enum SubscriptionPlan {
     ENTERPRISE("enterprise", 200, 20000, 5000, true, 149900);
 
     private final String value;
-    private final int storageLimitGB;
+    private final int connectorLimitGB;
     private final int monthlyDocumentLimit;
     private final int monthlyQueryLimit;
     private final boolean enabledAdvancedFeatures;
     private final int priceInCents;
 
-    SubscriptionPlan(String value, int storageLimitGB, int monthlyDocumentLimit, 
+    SubscriptionPlan(String value, int connectorLimitGB, int monthlyDocumentLimit,
                      int monthlyQueryLimit, boolean enabledAdvancedFeatures, int priceInCents) {
         this.value = value;
-        this.storageLimitGB = storageLimitGB;
+        this.connectorLimitGB = connectorLimitGB;
         this.monthlyDocumentLimit = monthlyDocumentLimit;
         this.monthlyQueryLimit = monthlyQueryLimit;
         this.enabledAdvancedFeatures = enabledAdvancedFeatures;
@@ -33,8 +33,8 @@ public enum SubscriptionPlan {
         return value;
     }
 
-    public int getStorageLimitGB() {
-        return storageLimitGB;
+    public int getConnectorLimitGB() {
+        return connectorLimitGB;
     }
 
     public int getMonthlyDocumentLimit() {

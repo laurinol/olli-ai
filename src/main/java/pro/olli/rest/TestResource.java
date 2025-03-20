@@ -8,6 +8,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
 
+import io.quarkus.arc.profile.IfBuildProfile;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -44,6 +45,7 @@ import pro.olli.worker.SyncWorker;
  * Main source directory version of TestResource for debugging and development.
  */
 @Path("/test-integration")
+@IfBuildProfile("dev")  // These REST endpoints should only be available in dev profile
 @ApplicationScoped
 public class TestResource {
 
@@ -68,7 +70,7 @@ public class TestResource {
     @ConfigProperty(name = "quarkus.mongodb.database", defaultValue = "olli")
     String databaseName;
 
-    
+
     @GET
     @Path("/get-latest-verification")
     @Produces(MediaType.TEXT_PLAIN)
@@ -125,7 +127,7 @@ public class TestResource {
                             "folderId", "test-files"  // Using 'folderId' to match SyncTask class field name
                         );
                         String mockPayload = gson.toJson(mockTaskData);
-                        
+
                         // Process the mock task directly
                         return syncWorker.processTask(taskId, mockPayload)
                                 .map(v -> Response.ok(Map.of(
@@ -148,46 +150,46 @@ public class TestResource {
     public String simpleHealthCheck() {
         return "OK";
     }
-    
-    
+
+
     @GET
     @Path("/check-verification")
     @Produces(MediaType.APPLICATION_JSON)
     public Uni<Response> checkVerification(@QueryParam("token") String token) {
         LOG.infof("Checking verification with token: %s", token);
-        
+
         try {
             // First check in the verifications collection
             MongoCollection<Document> verifications = mongoClient.getDatabase(databaseName).getCollection("verifications");
             Document doc = verifications.find(new Document("token", token)).first();
-            
+
             if (doc == null) {
                 LOG.warnf("No verification found with token: %s", token);
                 return Uni.createFrom().item(Response.status(404)
                     .entity(Map.of("found", false, "message", "No verification found with token: " + token))
                     .build());
             }
-            
+
             // Extract and return full verification data for inspection
             Map<String, Object> result = new HashMap<>();
             result.put("found", true);
             result.put("token", doc.getString("token"));
             result.put("email", doc.getString("email"));
             result.put("businessId", doc.getString("businessId"));
-            
+
             boolean isVerified = doc.getBoolean("verified", false);
             result.put("verified", isVerified);
-            
+
             // Add collection info
             result.put("collection", "verifications");
-            
+
             result.put("role", doc.getString("role"));
             result.put("createdAt", doc.getLong("createdAt"));
             result.put("expiresAt", doc.getLong("expiresAt"));
-            
-            LOG.infof("Found verification: token=%s, email=%s, verified=%s", 
+
+            LOG.infof("Found verification: token=%s, email=%s, verified=%s",
                 doc.getString("token"), doc.getString("email"), isVerified);
-                
+
             return Uni.createFrom().item(Response.ok(result).build());
         } catch (Exception e) {
             LOG.errorf("Error checking verification: %s", e.getMessage());
@@ -207,9 +209,9 @@ public class TestResource {
                 .entity(Map.of("error", "Email and businessId are required"))
                 .build();
         }
-        
+
         LOG.infof("Testing full registration flow for email: %s, businessId: %s", email, businessId);
-        
+
         // This is a simplified synchronous version to help with debugging
         try {
             // Return a diagnostic message instead of trying to create an actual registration
@@ -220,7 +222,7 @@ public class TestResource {
                 "businessId", businessId,
                 "timestamp", System.currentTimeMillis()
             )).build();
-            
+
         } catch (Exception e) {
             LOG.errorf("Error in test registration: %s", e.getMessage());
             return Response.serverError()
@@ -228,7 +230,7 @@ public class TestResource {
                 .build();
         }
     }
-    
+
     @GET
     @Path("/test-registration-full")
     @Produces(MediaType.APPLICATION_JSON)
@@ -239,12 +241,12 @@ public class TestResource {
                 .entity(Map.of("error", "Email and businessId are required"))
                 .build());
         }
-        
+
         LOG.infof("Testing full registration flow for email: %s, businessId: %s", email, businessId);
-        
+
         // Generate a random test password
         String password = "test" + System.currentTimeMillis();
-        
+
         // Step 1: Create a verification
         Verification verification = new Verification(
             "test-token-" + System.currentTimeMillis(),
@@ -252,17 +254,17 @@ public class TestResource {
             email,
             "user" // Default role
         );
-        
+
         return userRepository.saveVerification(verification)
             .flatMap(v -> {
                 LOG.infof("Step 1: Verification created with token: %s", verification.getToken());
-                
+
                 // Step 2: Create a user for this verification
                 String userId = "user-" + System.currentTimeMillis();
                 Map<String, Object> metadata = new HashMap<>();
                 metadata.put("businessId", businessId);
                 metadata.put("hashedPassword", password);
-                
+
                 User user = new User(
                     userId,
                     email,
@@ -273,7 +275,7 @@ public class TestResource {
                     metadata,
                     null // Never store raw password
                 );
-                
+
                 return userRepository.saveUser(user)
                     .map(v2 -> {
                         LOG.infof("Step 2: User created with ID: %s", userId);
@@ -289,7 +291,7 @@ public class TestResource {
                     null, // No name
                     "admin" // First user is admin
                 );
-                
+
                 return userRepository.saveBusinessUser(businessUser)
                     .map(v -> {
                         LOG.infof("Step 3: BusinessUser association created");
@@ -299,23 +301,23 @@ public class TestResource {
             .flatMap(userId -> {
                 // Step 4: Mark the verification as verified
                 Verification verifiedObj = verification.withVerified();
-                LOG.infof("Step 4: Marking verification as verified, token: %s, verified: %s", 
+                LOG.infof("Step 4: Marking verification as verified, token: %s, verified: %s",
                     verifiedObj.getToken(), verifiedObj.isVerified());
-                
+
                 return userRepository.saveVerification(verifiedObj)
                     .map(v -> {
                         LOG.infof("Step 4: Verification marked as verified");
-                        
+
                         // Step 5: Verify the verified status directly in MongoDB
                         try {
                             MongoCollection<Document> verifications = mongoClient.getDatabase(databaseName)
                                 .getCollection("verifications");
                             Document doc = verifications.find(new Document("token", verification.getToken())).first();
-                            
+
                             if (doc != null) {
                                 boolean verified = doc.getBoolean("verified", false);
                                 LOG.infof("MongoDB verification: verification verified=%s", verified);
-                                
+
                                 return Response.ok(Map.of(
                                     "success", true,
                                     "message", "Test registration flow completed successfully",
@@ -328,11 +330,11 @@ public class TestResource {
                                 MongoCollection<Document> invites = mongoClient.getDatabase(databaseName)
                                     .getCollection("invites");
                                 Document inviteDoc = invites.find(new Document("token", verification.getToken())).first();
-                                
+
                                 if (inviteDoc != null) {
                                     boolean claimed = inviteDoc.getBoolean("claimed", false);
                                     LOG.infof("MongoDB verification: found in invites collection, claimed=%s", claimed);
-                                    
+
                                     return Response.ok(Map.of(
                                         "success", true,
                                         "message", "Registration completed successfully via backward compatibility",
@@ -367,8 +369,8 @@ public class TestResource {
                     .build();
             });
     }
-    
-    
+
+
     @GET
     @Path("/debug/collections")
     @Produces(MediaType.APPLICATION_JSON)
@@ -399,7 +401,7 @@ public class TestResource {
                 verificationList.add(verification);
             });
             result.put("recent_verifications", verificationList);
-            
+
 
             return Response.ok(result).build();
 
@@ -424,13 +426,13 @@ public class TestResource {
             users.find().forEach(doc -> {
                 // Debug document structure
                 LOG.debugf("User document: %s", doc.toJson());
-                
+
                 Map<String, Object> userData = new HashMap<>();
-                
+
                 // Only add valid users with at least some data
                 String id = doc.getString("id");
                 String email = doc.getString("email");
-                
+
                 // Check document structure
                 if (id == null && email == null) {
                     if (doc.containsKey("syncHistory")) {
@@ -440,12 +442,12 @@ public class TestResource {
                         return; // Skip this document
                     }
                 }
-                
+
                 // Include all fields explicitly for debugging
                 userData.put("id", id);
                 userData.put("email", email);
                 userData.put("doc_id", doc.getObjectId("_id").toString());
-                
+
                 // Include all fields that might exist
                 for (String fieldName : doc.keySet()) {
                     if (!fieldName.equals("_id") && !fieldName.equals("id") && !fieldName.equals("email")) {
@@ -455,14 +457,14 @@ public class TestResource {
                         }
                     }
                 }
-                
+
                 // Add to list
                 userList.add(userData);
             });
 
             result.put("users", userList);
             result.put("count", userList.size());
-            
+
             // Add raw user data for debugging
             List<Document> rawDocs = new ArrayList<>();
             users.find().limit(10).forEach(doc -> {
@@ -509,14 +511,14 @@ public class TestResource {
             businessUsers.find(filter).forEach(doc -> {
                 // Debug document structure
                 LOG.debugf("Business user document: %s", doc.toJson());
-                
+
                 Map<String, Object> userData = new HashMap<>();
-                
+
                 // Include MongoDB document ID for reference
                 if (doc.getObjectId("_id") != null) {
                     userData.put("doc_id", doc.getObjectId("_id").toString());
                 }
-                
+
                 // Include all fields that might exist
                 for (String fieldName : doc.keySet()) {
                     if (!fieldName.equals("_id")) {
@@ -528,7 +530,7 @@ public class TestResource {
                         }
                     }
                 }
-                
+
                 userList.add(userData);
             });
 

@@ -1,0 +1,167 @@
+@startuml Olli AI Application Component Diagram
+
+!define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v16.0/dist
+!includeurl AWSPUML/AWSCommon.puml
+!includeurl AWSPUML/Storage/SimpleStorageService.puml
+!includeurl AWSPUML/ApplicationIntegration/SimpleQueueService.puml
+
+skinparam componentStyle rectangle
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam roundCorner 20
+skinparam componentBorderColor #666666
+skinparam componentBackgroundColor #FFFFFF
+
+' Define custom styles
+skinparam component {
+  BackgroundColor<<Frontend>> #E1F5FE
+  BorderColor<<Frontend>> #0288D1
+  BackgroundColor<<Backend>> #DCEDC8
+  BorderColor<<Backend>> #689F38
+  BackgroundColor<<Connector>> #F3E5F5
+  BorderColor<<Connector>> #8E24AA
+  BackgroundColor<<External>> #FFF3E0
+  BorderColor<<External>> #FF8F00
+}
+
+' Main components
+package "Olli AI Platform" {
+  package "Frontend" {
+    component "Customer Web Application" as CustomerWeb <<Frontend>> {
+      component "Authentication Module" as AuthFront
+      component "User Dashboard" as Dashboard
+      component "Team Management" as TeamManagement
+      component "Sync UI" as SyncUI
+      component "Files Explorer" as Explorer
+      component "Search Interface" as SearchUI
+    }
+
+    component "Admin Web Application" as AdminWeb <<Frontend>> {
+      component "Admin Dashboard" as AdminDashboard
+      component "Customer Management" as CustomerManagement
+      component "System Monitoring" as Monitoring
+      component "Billing Management" as BillingUI
+    }
+  }
+
+  package "Backend Services" {
+    component "Authentication Service" as AuthService <<Backend>> {
+      component "User Registration" as Registration
+      component "Login Handler" as Login
+      component "Email Verification" as EmailVerification
+      component "Password Reset" as PasswordReset
+    }
+
+    component "Team Management Service" as TeamService <<Backend>> {
+      component "Invitation Handler" as InvitationHandler
+      component "Business Management" as BusinessManagement
+      component "Role Management" as RoleManagement
+    }
+
+    component "Sync Service" as SyncService <<Backend>> {
+      component "File Sync Engine" as SyncEngine
+      component "Task Queue Manager" as TaskQueue
+      component "Connectors" as StorageAdapters
+    }
+
+    component "Search Service" as SearchService <<Backend>> {
+      component "Indexing Service" as IndexingService
+      component "Query Service" as QueryService
+      component "AI Embedding Service" as EmbeddingService
+    }
+
+    component "Billing Service" as BillingService <<Backend>> {
+      component "Subscription Management" as SubscriptionManagement
+      component "Usage Tracking" as UsageTracking
+      component "Invoice Generation" as InvoiceGeneration
+    }
+
+    component "Admin Service" as AdminService <<Backend>> {
+      component "System Stats" as SystemStats
+      component "User Management" as UserManagement
+      component "Environment Configuration" as EnvConfig
+    }
+  }
+
+  package "Connector Layer" {
+    database "User Database" as UserDB <<Connector>> {
+      [User Profiles]
+      [Businesses]
+      [Roles & Permissions]
+      [Invitations]
+    }
+
+    database "Sync Database" as SyncDB <<Connector>> {
+      [Sync History]
+      [Tasks]
+      [File Metadata]
+    }
+
+    database "Search Index" as SearchIndex <<Connector>> {
+      [Document Index]
+      [Vector Embeddings]
+    }
+
+    database "Billing Database" as BillingDB <<Connector>> {
+      [Subscriptions]
+      [Transactions]
+      [Usage Records]
+    }
+  }
+}
+
+' External systems
+cloud "External Systems" {
+  [Email Service] as EmailService <<External>>
+  [Payment Gateway] as PaymentGateway <<External>>
+  SimpleStorageService(S3, "S3 Connector", "file storage") <<External>>
+  [Google Drive] as GDrive <<External>>
+  [Dropbox] as Dropbox <<External>>
+  [OneDrive] as OneDrive <<External>>
+  [SFTP Servers] as SFTP <<External>>
+  [Network Shares] as NetworkShares <<External>>
+  [LLM Providers] as LLMProviders <<External>>
+}
+
+' Connections between components
+' Frontend to Backend
+CustomerWeb --> AuthService
+CustomerWeb --> TeamService
+CustomerWeb --> SyncService
+CustomerWeb --> SearchService
+CustomerWeb --> BillingService
+
+AdminWeb --> AdminService
+AdminWeb --> BillingService
+AdminWeb --> AuthService
+
+' Backend to Connector
+AuthService --> UserDB
+TeamService --> UserDB
+SyncService --> SyncDB
+SearchService --> SearchIndex
+BillingService --> BillingDB
+AdminService --> UserDB
+AdminService --> SyncDB
+AdminService --> BillingDB
+
+' Backend to External Systems
+AuthService --> EmailService
+BillingService --> PaymentGateway
+SyncService --> S3
+SyncService --> GDrive
+SyncService --> Dropbox
+SyncService --> OneDrive
+SyncService --> SFTP
+SyncService --> NetworkShares
+SearchService --> LLMProviders
+
+' Inter-service communication
+AuthService --> TeamService : "User creation"
+TeamService --> AuthService : "Permission check"
+SyncService --> SearchService : "Content indexing"
+BillingService --> SyncService : "Usage limits"
+BillingService --> TeamService : "Plan limits"
+
+@enduml

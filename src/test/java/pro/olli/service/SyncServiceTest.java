@@ -4,7 +4,6 @@
 package pro.olli.service;
 
 import com.google.gson.Gson;
-import io.quarkus.test.junit.QuarkusTest;
 import io.smallrye.mutiny.Uni;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,8 +11,8 @@ import org.mockito.Mockito;
 import pro.olli.core.logging.TracingService;
 import pro.olli.queue.TaskQueueService;
 import pro.olli.repository.SyncRepository;
-import pro.olli.storage.StorageFactory;
-import pro.olli.storage.StorageProvider;
+import pro.olli.connector.Connector;
+import pro.olli.connector.ConnectorFactory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,7 +26,7 @@ class SyncServiceTest {
 
     private SyncService syncService;
     private TaskQueueService taskQueueService;
-    private StorageFactory storageFactory;
+    private ConnectorFactory connectorFactory;
     private SyncRepository syncRepository;
     private TracingService tracingService;
     private Gson gson;
@@ -35,25 +34,25 @@ class SyncServiceTest {
     @BeforeEach
     void setUp() {
         taskQueueService = Mockito.mock(TaskQueueService.class);
-        storageFactory = Mockito.mock(StorageFactory.class);
+        connectorFactory = Mockito.mock(ConnectorFactory.class);
         syncRepository = Mockito.mock(SyncRepository.class);
         tracingService = Mockito.mock(TracingService.class);
         gson = new Gson(); // Use real Gson instance - can't mock final classes
         String projectId = "test-project"; // Dummy value
         String location = "us-test1"; // Dummy value
-        syncService = new SyncService(taskQueueService, storageFactory, syncRepository, gson, tracingService, projectId, location);
+        syncService = new SyncService(taskQueueService, connectorFactory, syncRepository, gson, tracingService, projectId, location);
     }
 
     @Test
     void testSyncSuccess() {
         // Arrange
-        StorageProvider provider = Mockito.mock(StorageProvider.class);
-        when(storageFactory.getProvider("local")).thenReturn(provider);
+        Connector provider = Mockito.mock(Connector.class);
+        when(connectorFactory.getProvider("local")).thenReturn(provider);
         when(taskQueueService.enqueueTask(anyString(), anyString()))
             .thenReturn(Uni.createFrom().nullItem());
         when(syncRepository.appendSyncHistory(eq("acme-corp"), eq("john-123"), any()))
             .thenReturn(Uni.createFrom().nullItem());
-        
+
         // Setup tracing mocks - make withClientSpan execute the provided lambda
         when(tracingService.withClientSpan(anyString(), any(), any())).thenAnswer(invocation -> {
             return ((java.util.function.Supplier<?>) invocation.getArgument(1)).get();
@@ -73,8 +72,8 @@ class SyncServiceTest {
     @Test
     void testSyncUnsupportedSource() {
         // Arrange
-        when(storageFactory.getProvider("invalid")).thenReturn(null);
-        
+        when(connectorFactory.getProvider("invalid")).thenReturn(null);
+
         // Setup tracing mocks
         when(tracingService.withClientSpan(anyString(), any(), any())).thenAnswer(invocation -> {
             return ((java.util.function.Supplier<?>) invocation.getArgument(1)).get();
@@ -94,13 +93,13 @@ class SyncServiceTest {
     @Test
     void testSyncTaskQueueFailure() {
         // Arrange
-        StorageProvider provider = Mockito.mock(StorageProvider.class);
-        when(storageFactory.getProvider("local")).thenReturn(provider);
+        Connector provider = Mockito.mock(Connector.class);
+        when(connectorFactory.getProvider("local")).thenReturn(provider);
         when(taskQueueService.enqueueTask(anyString(), anyString()))
             .thenReturn(Uni.createFrom().failure(new RuntimeException("Queue error")));
         when(syncRepository.appendSyncHistory(eq("acme-corp"), eq("john-123"), any()))
             .thenReturn(Uni.createFrom().nullItem());
-        
+
         // Setup tracing mocks
         when(tracingService.withClientSpan(anyString(), any(), any())).thenAnswer(invocation -> {
             return ((java.util.function.Supplier<?>) invocation.getArgument(1)).get();

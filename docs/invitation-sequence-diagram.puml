@@ -1,0 +1,185 @@
+@startuml Invitation System Sequence Diagram
+
+actor "Admin User" as Admin
+actor "Invited User" as Invited
+participant "Frontend\n(Vue.js)" as Frontend
+participant "API Service\n(axios)" as APIService
+participant "Pinia Store" as Store
+participant "Backend\n(Java)" as Backend
+participant "InvitationController" as Controller
+participant "InvitationRepository" as Repo
+participant "Database\n(MongoDB/Firestore)" as DB
+participant "Email Service" as Email
+
+== Create Invitation Flow ==
+
+Admin -> Frontend: Opens Team Management
+Frontend -> APIService: getInvitations(businessId)
+APIService -> Backend: GET /invitations?businessId={id}
+Backend -> Controller: getInvitations(businessId)
+Controller -> Repo: getInvitationsByBusiness(businessId)
+Repo -> DB: query invitations
+DB --> Repo: return invitations
+Repo --> Controller: return invitations list
+Controller --> Backend: return response
+Backend --> APIService: 200 OK + invitations data
+APIService --> Store: update invitations list
+Store --> Frontend: update UI
+Frontend --> Admin: Display invitation list
+
+Admin -> Frontend: Click "Invite User"
+Frontend -> Admin: Show invitation form
+Admin -> Frontend: Submit form with email and role
+Frontend -> Store: createInvitation(data)
+Store -> APIService: createInvitation(data)
+APIService -> Backend: POST /invitations
+Backend -> Controller: createInvitation(request)
+Controller -> Repo: isUserAdmin(userId, businessId)
+Repo -> DB: query user permissions
+DB --> Repo: return admin status
+Repo --> Controller: return isAdmin boolean
+
+alt User is Admin
+    Controller -> Repo: saveInvitation(invitation)
+    Repo -> DB: save invitation
+    DB --> Repo: confirm save
+    Repo --> Controller: success
+    Controller -> Email: sendEmail(invitation)
+    Email --> Controller: email sent
+    Controller --> Backend: return success response
+    Backend --> APIService: 200 OK + invitation data
+    APIService --> Store: update state
+    Store --> Frontend: update UI with new invitation
+    Frontend --> Admin: Show success message
+else User is not Admin
+    Controller --> Backend: return forbidden error
+    Backend --> APIService: 403 Forbidden
+    APIService --> Store: handle error
+    Store --> Frontend: show error
+    Frontend --> Admin: Display error message
+end
+
+== Accept Invitation Flow ==
+
+Invited -> Frontend: Open invitation link
+Frontend -> APIService: getInvitation(id)
+APIService -> Backend: GET /invitations/{id}
+Backend -> Controller: getInvitation(id)
+Controller -> Repo: getInvitation(id)
+Repo -> DB: query invitation
+DB --> Repo: return invitation
+Repo --> Controller: return invitation data
+Controller --> Backend: return response
+Backend --> APIService: 200 OK + invitation data
+APIService --> Frontend: display invitation details
+Frontend --> Invited: Show invitation details
+
+Invited -> Frontend: Click "Accept Invitation"
+Frontend -> APIService: acceptInvitation(id)
+APIService -> Backend: POST /invitations/{id}/accept
+Backend -> Controller: acceptInvitation(id)
+Controller -> Repo: getInvitation(id)
+Repo -> DB: query invitation
+DB --> Repo: return invitation
+Repo --> Controller: return invitation data
+
+Controller -> Repo: getUser(userId)
+Repo -> DB: query user
+DB --> Repo: return user data
+Repo --> Controller: return user
+
+alt Valid Invitation
+    Controller -> Repo: saveBusinessUser(businessUser)
+    Repo -> DB: create business-user relationship
+    DB --> Repo: confirm save
+    
+    Controller -> Repo: saveInvitation(acceptedInvitation)
+    Repo -> DB: update invitation status
+    DB --> Repo: confirm update
+    
+    Repo --> Controller: success
+    Controller --> Backend: return success response
+    Backend --> APIService: 200 OK + success data
+    APIService --> Frontend: handle success
+    Frontend -> Frontend: Redirect to dashboard
+    Frontend --> Invited: Show dashboard with new access
+else Invalid or Expired Invitation
+    Controller --> Backend: return error response
+    Backend --> APIService: 400 Bad Request
+    APIService --> Frontend: handle error
+    Frontend --> Invited: Show error message
+end
+
+== Cancel Invitation Flow ==
+
+Admin -> Frontend: View invitation list
+Admin -> Frontend: Click "Cancel Invitation"
+Frontend -> Admin: Show confirmation dialog
+Admin -> Frontend: Confirm cancellation
+Frontend -> Store: cancelInvitation(id)
+Store -> APIService: cancelInvitation(id)
+APIService -> Backend: DELETE /invitations/{id}
+Backend -> Controller: cancelInvitation(id)
+Controller -> Repo: getInvitation(id)
+Repo -> DB: query invitation
+DB --> Repo: return invitation
+Repo --> Controller: return invitation data
+
+Controller -> Repo: isUserAdmin(userId, businessId)
+Repo -> DB: query user permissions
+DB --> Repo: return admin status
+Repo --> Controller: return isAdmin boolean
+
+alt User is Admin or Sender
+    Controller -> Repo: deleteInvitation(id)
+    Repo -> DB: delete invitation
+    DB --> Repo: confirm deletion
+    Repo --> Controller: success
+    Controller --> Backend: return success response
+    Backend --> APIService: 200 OK + success message
+    APIService --> Store: remove invitation from state
+    Store --> Frontend: update UI
+    Frontend --> Admin: Show success message
+else User not Authorized
+    Controller --> Backend: return forbidden error
+    Backend --> APIService: 403 Forbidden
+    APIService --> Store: handle error
+    Store --> Frontend: show error
+    Frontend --> Admin: Display error message
+end
+
+== Resend Invitation Flow ==
+
+Admin -> Frontend: View invitation list
+Admin -> Frontend: Click "Resend Invitation"
+Frontend -> Store: resendInvitation(id)
+Store -> APIService: resendInvitation(id)
+APIService -> Backend: POST /invitations/{id}/resend
+Backend -> Controller: resendInvitation(id)
+Controller -> Repo: getInvitation(id)
+Repo -> DB: query invitation
+DB --> Repo: return invitation
+Repo --> Controller: return invitation data
+
+Controller -> Repo: isUserAdmin(userId, businessId)
+Repo -> DB: query user permissions
+DB --> Repo: return admin status
+Repo --> Controller: return isAdmin boolean
+
+alt User is Admin or Sender and Invitation Not Expired/Accepted
+    Controller -> Email: sendEmail(invitation)
+    Email --> Controller: email sent
+    Controller --> Backend: return success response
+    Backend --> APIService: 200 OK + success message
+    APIService --> Store: update state
+    Store --> Frontend: update UI
+    Frontend --> Admin: Show success message
+else User not Authorized or Invalid State
+    Controller --> Backend: return error response
+    Backend --> APIService: 400 Bad Request or 403 Forbidden
+    APIService --> Store: handle error
+    Store --> Frontend: show error
+    Frontend --> Admin: Display error message
+end
+
+@enduml

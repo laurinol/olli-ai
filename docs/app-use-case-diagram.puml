@@ -1,0 +1,164 @@
+@startuml Olli AI Application Use Case Diagram
+
+skinparam backgroundColor white
+skinparam handwritten false
+skinparam defaultFontName Arial
+skinparam actorStyle awesome
+skinparam usecaseBackgroundColor #EEEEEE
+skinparam usecaseBorderColor #999999
+skinparam usecaseFontSize 14
+
+' Define actors
+actor "Business Owner" as Owner
+actor "Team Admin" as Admin
+actor "Regular User" as User
+actor "System Admin" as SysAdmin
+actor "Time" as Time
+
+' Define use case packages
+package "Authentication" {
+  usecase "Register Account" as Register
+  usecase "Login" as Login
+  usecase "Verify Email" as VerifyEmail
+  usecase "Reset Password" as ResetPassword
+  usecase "Manage Profile" as ManageProfile
+}
+
+package "Team Management" {
+  usecase "Create Business" as CreateBusiness
+  usecase "Invite Team Member" as InviteTeam
+  usecase "Accept Invitation" as AcceptInvite
+  usecase "Manage Team Roles" as ManageRoles
+  usecase "View Team Activity" as ViewTeamActivity
+}
+
+package "Sync & Connectors" {
+  usecase "Connect Connectors" as ConnectConnectors
+  usecase "Configure Sync Settings" as ConfigSync
+  usecase "Start Sync Job" as StartSync
+  usecase "Monitor Sync Status" as MonitorSync
+  usecase "Browse Synced Files" as BrowseFiles
+  usecase "Download Files" as DownloadFiles
+}
+
+package "Search & AI" {
+  usecase "Search Content" as Search
+  usecase "View Search Results" as ViewResults
+  usecase "Get AI-powered Insights" as AIInsights
+  usecase "Chat with Documents" as ChatDocs
+  usecase "Export Search Results" as ExportResults
+}
+
+package "Billing & Subscription" {
+  usecase "View Plans" as ViewPlans
+  usecase "Subscribe to Plan" as Subscribe
+  usecase "Manage Payment Methods" as ManagePayment
+  usecase "View Usage & Billing" as ViewBilling
+  usecase "Upgrade/Downgrade Plan" as ChangePlan
+}
+
+package "Admin Functions" {
+  usecase "Monitor System Health" as MonitorSystem
+  usecase "Manage All Businesses" as ManageBusinesses
+  usecase "View System Analytics" as ViewAnalytics
+  usecase "Configure System Settings" as ConfigSystem
+  usecase "View Audit Logs" as ViewAudit
+}
+
+package "Background Processes" {
+  usecase "Process Sync Queue" as ProcessQueue
+  usecase "Index Content" as IndexContent
+  usecase "Generate Usage Reports" as GenerateReports
+  usecase "Send Email Notifications" as SendEmails
+  usecase "Clean Expired Data" as CleanData
+}
+
+' Relationships - Business Owner
+Owner --> Register
+Owner --> Login
+Owner --> VerifyEmail
+Owner --> ResetPassword
+Owner --> ManageProfile
+Owner --> CreateBusiness
+Owner --> InviteTeam
+Owner --> ManageRoles
+Owner --> ViewTeamActivity
+Owner --> ConnectConnectors
+Owner --> ConfigSync
+Owner --> StartSync
+Owner --> MonitorSync
+Owner --> BrowseFiles
+Owner --> DownloadFiles
+Owner --> Search
+Owner --> ViewResults
+Owner --> AIInsights
+Owner --> ChatDocs
+Owner --> ExportResults
+Owner --> ViewPlans
+Owner --> Subscribe
+Owner --> ManagePayment
+Owner --> ViewBilling
+Owner --> ChangePlan
+
+' Relationships - Team Admin
+Admin --> Login
+Admin --> ResetPassword
+Admin --> ManageProfile
+Admin --> InviteTeam
+Admin --> ManageRoles
+Admin --> ViewTeamActivity
+Admin --> ConnectConnectors
+Admin --> ConfigSync
+Admin --> StartSync
+Admin --> MonitorSync
+Admin --> BrowseFiles
+Admin --> DownloadFiles
+Admin --> Search
+Admin --> ViewResults
+Admin --> AIInsights
+Admin --> ChatDocs
+Admin --> ExportResults
+Admin --> ViewBilling
+
+' Relationships - Regular User
+User --> Login
+User --> ResetPassword
+User --> ManageProfile
+User --> AcceptInvite
+User --> BrowseFiles
+User --> DownloadFiles
+User --> Search
+User --> ViewResults
+User --> AIInsights
+User --> ChatDocs
+User --> ExportResults
+
+' Relationships - System Admin
+SysAdmin --> Login
+SysAdmin --> ResetPassword
+SysAdmin --> ManageProfile
+SysAdmin --> MonitorSystem
+SysAdmin --> ManageBusinesses
+SysAdmin --> ViewAnalytics
+SysAdmin --> ConfigSystem
+SysAdmin --> ViewAudit
+
+' Relationships - Time (for automated tasks)
+Time --> ProcessQueue
+Time --> IndexContent
+Time --> GenerateReports
+Time --> SendEmails
+Time --> CleanData
+
+' Include/Extend relationships
+Register .> VerifyEmail : <<include>>
+InviteTeam .> SendEmails : <<include>>
+AcceptInvite .> ManageProfile : <<include>>
+StartSync .> ProcessQueue : <<include>>
+ProcessQueue .> IndexContent : <<include>>
+AIInsights .> Search : <<include>>
+ChatDocs .> Search : <<include>>
+Subscribe .> ManagePayment : <<include>>
+ChangePlan .> ViewPlans : <<extend>>
+
+@enduml

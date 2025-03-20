@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
 
-package pro.olli.storage.impl;
+package pro.olli.connector.impl;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -16,9 +16,9 @@ import jcifs.smb.SmbException;
 import jcifs.smb.SmbFile;
 import jcifs.smb.SmbFileInputStream;
 import org.jboss.logging.Logger;
-import pro.olli.models.StorageCredentials;
-import pro.olli.storage.StorageProvider;
-import pro.olli.storage.StorageProviderType;
+import pro.olli.models.ConnectorCredentials;
+import pro.olli.connector.Connector;
+import pro.olli.connector.ConnectorType;
 
 import java.io.InputStream;
 import java.util.Arrays;
@@ -26,15 +26,15 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
-public class NetworkProvider implements StorageProvider {
+public class NetworkConnector implements Connector {
 
-    private static final Logger LOG = Logger.getLogger(NetworkProvider.class);
+    private static final Logger LOG = Logger.getLogger(NetworkConnector.class);
 
     private CIFSContext context;
     private String basePath;
 
     @Override
-    public Uni<Boolean> authenticate(StorageCredentials credentials) {
+    public Uni<Boolean> authenticate(ConnectorCredentials credentials) {
         return Uni.createFrom().emitter(emitter -> {
             try {
                 String username = (String) credentials.get("username");
@@ -110,7 +110,7 @@ public class NetworkProvider implements StorageProvider {
     }
 
     @Override
-    public StorageProviderType getProviderType() {
-        return StorageProviderType.NETWORK;
+    public ConnectorType getProviderType() {
+        return ConnectorType.NETWORK;
     }
 }

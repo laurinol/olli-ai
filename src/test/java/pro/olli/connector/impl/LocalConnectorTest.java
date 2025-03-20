@@ -1,4 +1,4 @@
-package pro.olli.storage.impl;
+package pro.olli.connector.impl;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.smallrye.mutiny.Uni;
@@ -8,7 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import pro.olli.models.StorageCredentials;
+import pro.olli.models.ConnectorCredentials;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -17,24 +17,24 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
-class LocalProviderTest {
+class LocalConnectorTest {
 
-    private LocalProvider localProvider;
+    private LocalConnector localConnector;
     private String testDir;
 
     @BeforeEach
     void setUp() {
-        localProvider = new LocalProvider();
+        localConnector = new LocalConnector();
         testDir = Paths.get("./test/").toAbsolutePath().toString();
     }
 
     @Test
     void testAuthenticateSuccess() {
-        StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
+        ConnectorCredentials creds = new ConnectorCredentials(new HashMap<String, Object>() {{
             put("basePath", testDir);
         }});
 
-        Uni<Boolean> authUni = localProvider.authenticate(creds);
+        Uni<Boolean> authUni = localConnector.authenticate(creds);
         Boolean result = authUni.await().indefinitely();
 
         assertTrue(result, "Authentication should succeed with valid directory");
@@ -42,11 +42,11 @@ class LocalProviderTest {
 
     @Test
     void testAuthenticateFailureInvalidPath() {
-        StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
+        ConnectorCredentials creds = new ConnectorCredentials(new HashMap<String, Object>() {{
             put("basePath", "/non/existent/path");
         }});
 
-        Uni<Boolean> authUni = localProvider.authenticate(creds);
+        Uni<Boolean> authUni = localConnector.authenticate(creds);
         Boolean result = authUni.await().indefinitely();
 
         assertFalse(result, "Authentication should fail with invalid directory");
@@ -54,12 +54,12 @@ class LocalProviderTest {
 
     @Test
     void testListFilesSuccess() {
-        StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
+        ConnectorCredentials creds = new ConnectorCredentials(new HashMap<String, Object>() {{
             put("basePath", testDir);
         }});
 
-        localProvider.authenticate(creds).await().indefinitely();
-        Uni<List<String>> filesUni = localProvider.listFiles("");
+        localConnector.authenticate(creds).await().indefinitely();
+        Uni<List<String>> filesUni = localConnector.listFiles("");
         List<String> files = filesUni.await().indefinitely();
 
         assertNotNull(files, "File list should not be null");
@@ -70,12 +70,12 @@ class LocalProviderTest {
 
     @Test
     void testListFilesEmptyDirectory() {
-        StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
+        ConnectorCredentials creds = new ConnectorCredentials(new HashMap<String, Object>() {{
             put("basePath", testDir + "/empty"); // Assuming empty subdir exists or adjust
         }});
 
-        localProvider.authenticate(creds).await().indefinitely();
-        Uni<List<String>> filesUni = localProvider.listFiles("");
+        localConnector.authenticate(creds).await().indefinitely();
+        Uni<List<String>> filesUni = localConnector.listFiles("");
         List<String> files = filesUni.await().indefinitely();
 
         assertNotNull(files, "File list should not be null");
@@ -84,12 +84,12 @@ class LocalProviderTest {
 
     @Test
     void testDownloadFileSuccess() throws Exception {
-        StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
+        ConnectorCredentials creds = new ConnectorCredentials(new HashMap<String, Object>() {{
             put("basePath", testDir);
         }});
 
-        localProvider.authenticate(creds).await().indefinitely();
-        Uni<InputStream> streamUni = localProvider.downloadFile("meeting_notes.txt");
+        localConnector.authenticate(creds).await().indefinitely();
+        Uni<InputStream> streamUni = localConnector.downloadFile("meeting_notes.txt");
         InputStream stream = streamUni.await().indefinitely();
 
         assertNotNull(stream, "InputStream should not be null");
@@ -100,12 +100,12 @@ class LocalProviderTest {
 
     @Test
     void testDownloadFileNotFound() {
-        StorageCredentials creds = new StorageCredentials(new HashMap<String, Object>() {{
+        ConnectorCredentials creds = new ConnectorCredentials(new HashMap<String, Object>() {{
             put("basePath", testDir);
         }});
 
-        localProvider.authenticate(creds).await().indefinitely();
-        Uni<InputStream> streamUni = localProvider.downloadFile("nonexistent.txt");
+        localConnector.authenticate(creds).await().indefinitely();
+        Uni<InputStream> streamUni = localConnector.downloadFile("nonexistent.txt");
 
         Exception exception = assertThrows(Exception.class, () -> streamUni.await().indefinitely());
         assertTrue(exception.getMessage().contains("No such file or directory"), "Should throw file not found exception");

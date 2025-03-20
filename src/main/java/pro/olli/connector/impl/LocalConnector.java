@@ -2,15 +2,15 @@
  * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
  */
 
-package pro.olli.storage.impl;
+package pro.olli.connector.impl;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.io.IOException;
 import org.jboss.logging.Logger;
-import pro.olli.models.StorageCredentials;
-import pro.olli.storage.StorageProvider;
-import pro.olli.storage.StorageProviderType;
+import pro.olli.models.ConnectorCredentials;
+import pro.olli.connector.Connector;
+import pro.olli.connector.ConnectorType;
 
 import java.io.FileInputStream;
 import java.io.InputStream;
@@ -21,20 +21,20 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
-public class LocalProvider implements StorageProvider {
+public class LocalConnector implements Connector {
 
-    private static final Logger LOG = Logger.getLogger(LocalProvider.class);
+    private static final Logger LOG = Logger.getLogger(LocalConnector.class);
 
     private String basePath;
 
-    public LocalProvider() {
+    public LocalConnector() {
         // Default to project root for testing if no credentials are provided
         this.basePath = Paths.get("test/").toAbsolutePath().toString();
         LOG.infof("LocalProvider initialized with default base path: %s", this.basePath);
     }
 
     @Override
-    public Uni<Boolean> authenticate(StorageCredentials credentials) {
+    public Uni<Boolean> authenticate(ConnectorCredentials credentials) {
         return Uni.createFrom().emitter(emitter -> {
             try {
                 if (credentials != null && credentials.get("basePath") != null) {
@@ -122,7 +122,7 @@ public class LocalProvider implements StorageProvider {
     }
 
     @Override
-    public StorageProviderType getProviderType() {
-        return StorageProviderType.LOCAL;
+    public ConnectorType getProviderType() {
+        return ConnectorType.LOCAL;
     }
 }

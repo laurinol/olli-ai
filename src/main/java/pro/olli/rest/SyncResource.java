@@ -35,9 +35,9 @@ public class SyncResource {
     }
 
     /**
-     * REST endpoint for synchronizing files across storage providers
+     * REST endpoint for synchronizing files across connector providers
      *
-     * @param source Source storage provider
+     * @param source Source connector provider
      * @param folderId Folder ID to sync
      * @param businessId Business ID
      * @param ctx Security context

@@ -1,4 +1,4 @@
-package pro.olli.storage.impl;
+package pro.olli.connector.impl;
 
 import com.microsoft.graph.httpcore.AuthenticationProvider;
 import com.microsoft.graph.models.DriveItem;
@@ -6,30 +6,30 @@ import com.microsoft.graph.serviceclient.GraphServiceClient;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
-import pro.olli.models.StorageCredentials;
-import pro.olli.storage.StorageProvider;
+import pro.olli.models.ConnectorCredentials;
+import pro.olli.connector.Connector;
 
 import java.io.InputStream;
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * OneDrive implementation of StorageProvider.
+ * OneDrive implementation of Connector.
  */
 @ApplicationScoped
-public class OneDriveProvider implements StorageProvider {
+public class OneDriveConnector implements Connector {
 
-    private static final Logger LOG = Logger.getLogger(OneDriveProvider.class);
+    private static final Logger LOG = Logger.getLogger(OneDriveConnector.class);
 
     private GraphServiceClient graphClient;
 
-    public OneDriveProvider() {
+    public OneDriveConnector() {
         // Placeholder - real client set via authenticate
         this.graphClient = null;
     }
 
     @Override
-    public Uni<Boolean> authenticate(StorageCredentials credentials) {
+    public Uni<Boolean> authenticate(ConnectorCredentials credentials) {
         return Uni.createFrom().emitter(emitter -> {
             try {
                 String accessToken = (String) credentials.get("accessToken");
@@ -83,7 +83,7 @@ public class OneDriveProvider implements StorageProvider {
     }
 
     @Override
-    public StorageProviderType getProviderType() {
-        return StorageProviderType.ONEDRIVE;
+    public ConnectorType getConnectorType() {
+        return ConnectorType.ONEDRIVE;
     }
 }

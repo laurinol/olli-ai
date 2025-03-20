@@ -7,10 +7,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Unified model for storage provider credentials.
+ * Unified model for connector provider credentials.
  * Stores key-value pairs to accommodate diverse authentication mechanisms (e.g., OAuth tokens, SSH keys, IAM keys).
  */
-public class StorageCredentials {
+public class ConnectorCredentials {
 
     private final Map<String, Object> credentials;
 
@@ -18,7 +18,7 @@ public class StorageCredentials {
      * Constructs credentials from a map.
      * @param credentials Map of credential key-value pairs (e.g., {"accessToken": "..."}, {"sshKey": "..."}).
      */
-    public StorageCredentials(Map<String, Object> credentials) {
+    public ConnectorCredentials(Map<String, Object> credentials) {
         this.credentials = new HashMap<>(credentials != null ? credentials : new HashMap<>());
     }
 
