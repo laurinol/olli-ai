@@ -134,6 +134,12 @@
       <artifactId>google-cloud-tasks</artifactId>
       <version>2.59.0</version>
     </dependency>
+    <!-- Stripe API -->
+    <dependency>
+      <groupId>com.stripe</groupId>
+      <artifactId>stripe-java</artifactId>
+      <version>28.4.0</version>
+    </dependency>
     <!-- Google JSON support -->
     <dependency>
       <groupId>com.google.code.gson</groupId>
@@ -229,8 +235,8 @@
     </dependency>
     <dependency>
       <groupId>org.mockito</groupId>
-      <artifactId>mockito-core</artifactId>
-      <version>5.16.0</version>
+      <artifactId>mockito-inline</artifactId>
+      <version>5.2.0</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -297,7 +303,7 @@
         </plugins>
       </build>
     </profile>
-    
+
     <profile>
       <id>e2e</id>
       <build>

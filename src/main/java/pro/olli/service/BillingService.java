@@ -13,8 +13,12 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import pro.olli.models.Business;
 import pro.olli.models.SubscriptionPlan;
+import pro.olli.models.BillingTransaction;
+import pro.olli.repository.BillingRepository;
 import pro.olli.repository.UserRepository;
 import pro.olli.repository.Factory;
+import pro.olli.service.payment.PaymentProvider;
+import pro.olli.service.payment.PaymentProviderFactory;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -34,6 +38,8 @@ public class BillingService {
     private static final Logger LOG = Logger.getLogger(BillingService.class);
 
     private final UserRepository userRepository;
+    private final BillingRepository billingRepository;
+    private final PaymentProvider paymentProvider;
     private final Gson gson;
     private final Firestore firestore;
     private final boolean billingEnabled;
@@ -41,10 +47,14 @@ public class BillingService {
     @Inject
     public BillingService(
             @Factory UserRepository userRepository,
+            @Factory BillingRepository billingRepository,
+            PaymentProviderFactory paymentProviderFactory,
             Gson gson,
             Firestore firestore,
             @ConfigProperty(name = "billing.enabled", defaultValue = "false") boolean billingEnabled) {
         this.userRepository = userRepository;
+        this.billingRepository = billingRepository;
+        this.paymentProvider = paymentProviderFactory.getPaymentProvider();
         this.gson = gson;
         this.firestore = firestore;
         this.billingEnabled = billingEnabled;
@@ -169,7 +179,7 @@ public class BillingService {
                 }
 
                 // Update document count
-                int newCount = Math.min(
+                long newCount = Math.min(
                     business.getDocumentsProcessedThisMonth() + documentCount,
                     business.getSubscriptionPlanEnum().getMonthlyDocumentLimit()
                 );
@@ -483,5 +493,178 @@ public class BillingService {
 
                 return transactions;
             });
+    }
+    
+    /**
+     * Validate that the user has access to the business.
+     * This is a stub method for demonstration purposes.
+     */
+    public Uni<Void> validateBusinessAccess(String token, String businessId) {
+        LOG.infof("Validating business access for token: %s, business: %s", token, businessId);
+        // In a real implementation, this would verify the token and check if the user
+        // has access to the specified business
+        return Uni.createFrom().voidItem();
+    }
+    
+    /**
+     * Create a payment method for a business.
+     */
+    public Uni<String> createPaymentMethod(String businessId, Map<String, Object> paymentDetails) {
+        LOG.infof("Creating payment method for business: %s", businessId);
+        return userRepository.getBusiness(businessId)
+            .flatMap(businessOpt -> {
+                if (businessOpt.isEmpty()) {
+                    return Uni.createFrom().failure(new IllegalArgumentException("Business not found"));
+                }
+                
+                Business business = businessOpt.get();
+                return paymentProvider.createPaymentMethod(businessId, paymentDetails);
+            });
+    }
+    
+    /**
+     * Get payment method details.
+     */
+    public Uni<Map<String, Object>> getPaymentMethod(String paymentMethodId) {
+        LOG.infof("Getting payment method: %s", paymentMethodId);
+        return paymentProvider.getPaymentMethod(paymentMethodId);
+    }
+    
+    /**
+     * Create a subscription for a business.
+     */
+    public Uni<String> createSubscription(String businessId, String planValue, String paymentMethodId) {
+        LOG.infof("Creating subscription for business: %s with plan: %s", businessId, planValue);
+        
+        return userRepository.getBusiness(businessId)
+            .flatMap(businessOpt -> {
+                if (businessOpt.isEmpty()) {
+                    return Uni.createFrom().failure(new IllegalArgumentException("Business not found"));
+                }
+                
+                Business business = businessOpt.get();
+                
+                // Update the business with the new plan
+                SubscriptionPlan plan = SubscriptionPlan.fromValue(planValue);
+                if (plan == null) {
+                    return Uni.createFrom().failure(new IllegalArgumentException("Invalid subscription plan"));
+                }
+                
+                Business updatedBusiness = new Business(
+                    business.getId(),
+                    business.getName(),
+                    plan.getValue(),
+                    "active",
+                    Instant.now(),
+                    Instant.now().plus(30, ChronoUnit.DAYS),
+                    paymentMethodId,
+                    business.getCreatedAt(),
+                    Instant.now(),
+                    business.getSettings(),
+                    business.getMetadata(),
+                    business.getCurrentConnectorUsageBytes(),
+                    business.getDocumentsProcessedThisMonth(),
+                    business.getQueriesThisMonth()
+                );
+                
+                return userRepository.saveBusiness(updatedBusiness)
+                    .chain(() -> paymentProvider.createSubscription(updatedBusiness, paymentMethodId));
+            });
+    }
+    
+    /**
+     * Update a subscription for a business.
+     */
+    public Uni<String> updateSubscription(String businessId, String subscriptionId, String planValue, String paymentMethodId) {
+        LOG.infof("Updating subscription for business: %s with plan: %s", businessId, planValue);
+        
+        return userRepository.getBusiness(businessId)
+            .flatMap(businessOpt -> {
+                if (businessOpt.isEmpty()) {
+                    return Uni.createFrom().failure(new IllegalArgumentException("Business not found"));
+                }
+                
+                Business business = businessOpt.get();
+                
+                // Update the business with the new plan
+                SubscriptionPlan plan = SubscriptionPlan.fromValue(planValue);
+                if (plan == null) {
+                    return Uni.createFrom().failure(new IllegalArgumentException("Invalid subscription plan"));
+                }
+                
+                Business updatedBusiness = new Business(
+                    business.getId(),
+                    business.getName(),
+                    plan.getValue(),
+                    "active",
+                    business.getSubscriptionStartDate(),
+                    business.getNextBillingDate(),
+                    paymentMethodId != null ? paymentMethodId : business.getPaymentMethodId(),
+                    business.getCreatedAt(),
+                    Instant.now(),
+                    business.getSettings(),
+                    business.getMetadata(),
+                    business.getCurrentConnectorUsageBytes(),
+                    business.getDocumentsProcessedThisMonth(),
+                    business.getQueriesThisMonth()
+                );
+                
+                return userRepository.saveBusiness(updatedBusiness)
+                    .chain(() -> paymentProvider.updateSubscription(updatedBusiness, subscriptionId));
+            });
+    }
+    
+    /**
+     * Cancel a subscription for a business.
+     */
+    public Uni<String> cancelSubscription(String businessId, String subscriptionId, boolean immediate) {
+        LOG.infof("Canceling subscription for business: %s, immediate: %s", businessId, immediate);
+        
+        return userRepository.getBusiness(businessId)
+            .flatMap(businessOpt -> {
+                if (businessOpt.isEmpty()) {
+                    return Uni.createFrom().failure(new IllegalArgumentException("Business not found"));
+                }
+                
+                Business business = businessOpt.get();
+                
+                // Update the business subscription status
+                Business updatedBusiness = new Business(
+                    business.getId(),
+                    business.getName(),
+                    business.getSubscriptionPlan(),
+                    immediate ? "canceled" : "canceling",
+                    business.getSubscriptionStartDate(),
+                    business.getNextBillingDate(),
+                    business.getPaymentMethodId(),
+                    business.getCreatedAt(),
+                    Instant.now(),
+                    business.getSettings(),
+                    business.getMetadata(),
+                    business.getCurrentConnectorUsageBytes(),
+                    business.getDocumentsProcessedThisMonth(),
+                    business.getQueriesThisMonth()
+                );
+                
+                return userRepository.saveBusiness(updatedBusiness)
+                    .chain(() -> paymentProvider.cancelSubscription(subscriptionId, immediate));
+            });
+    }
+    
+    /**
+     * Get transactions for a business.
+     */
+    public Uni<List<BillingTransaction>> getBusinessTransactions(String businessId, Instant fromDate, Instant toDate) {
+        LOG.infof("Getting transactions for business: %s", businessId);
+        return billingRepository.getBusinessTransactions(businessId, fromDate, toDate);
+    }
+    
+    /**
+     * Get transactions of a specific type for a business.
+     */
+    public Uni<List<BillingTransaction>> getBusinessTransactionsByType(
+            String businessId, BillingTransaction.TransactionType type, Instant fromDate, Instant toDate) {
+        LOG.infof("Getting transactions of type %s for business: %s", type, businessId);
+        return billingRepository.getBusinessTransactionsByType(businessId, type, fromDate, toDate);
     }
 }

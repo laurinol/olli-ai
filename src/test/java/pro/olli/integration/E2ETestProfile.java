@@ -8,6 +8,7 @@ import io.quarkus.test.junit.QuarkusTestProfile;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Test profile for E2E tests that ensures the MongoDB repositories are used
@@ -55,6 +56,19 @@ public class E2ETestProfile implements QuarkusTestProfile {
 
         return config;
     }
+    
+    @Override
+    public java.util.Set<Class<?>> getEnabledAlternatives() {
+        return Set.of();
+    }
+    
+    // Comment this out for now
+    // public java.util.Set<java.lang.Class<?>> getExtraClassesForDiscovery() {
+    //     return java.util.Set.of(
+    //         E2ETestResource.class,
+    //         SimpleTestResource.class
+    //     );
+    // }
 
     @Override
     public String getConfigProfile() {
@@ -65,4 +79,6 @@ public class E2ETestProfile implements QuarkusTestProfile {
     public boolean disableApplicationLifecycleObservers() {
         return false;
     }
+    
+    // We'll register the E2ETestResource class in a different way
 }

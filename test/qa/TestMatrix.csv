@@ -1,0 +1,29 @@
+Feature,Component,Priority,Test IDs
+Authentication,Login,High,T002;T023
+Authentication,Registration,High,T001
+Authentication,Password Reset,Medium,T003
+Business,Registration,High,T004
+Business,Team Management,High,T005;T006
+Document,Upload,High,T007
+Document,Search,High,T008
+Chat,RAG Query,High,T009
+Storage,Local,Medium,T010
+Storage,S3,Medium,T011
+Storage,Google Drive,Medium,T012
+Storage,Dropbox,Medium,T013
+Storage,SFTP,Medium,T014
+Billing,Subscription,High,T015
+Billing,Usage Tracking,Medium,T016
+Admin,Statistics,Low,T017
+Resilience,Circuit Breaker,Medium,T018;T019
+Performance,Upload Speed,Medium,T020
+Performance,Concurrent Users,High,T021
+Performance,Query Speed,High,T022
+Security,Authentication,High,T023
+Security,Access Control,High,T024
+API,Pagination,Medium,T025
+API,Sorting and Filtering,Medium,T026
+Error Handling,Input Validation,Medium,T027
+Error Handling,Service Unavailability,Medium,T028
+Monitoring,Metrics,Low,T029
+Monitoring,Tracing,Low,T030

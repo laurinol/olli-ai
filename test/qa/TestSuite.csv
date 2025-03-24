@@ -1,0 +1,75 @@
+Test ID,Description,Preconditions,Steps,Expected Result,Actual Result,Status,Notes
+T001,User Registration,None,"1. Navigate to /register
+2. Enter valid email and password
+3. Click Register",User account created and redirected to dashboard,,,
+T002,User Login,Registered user,"1. Navigate to /login
+2. Enter valid credentials
+3. Click Login",Successfully logged in and redirected to dashboard,,,
+T003,Password Reset,Registered user,"1. Click 'Forgot Password'
+2. Enter email
+3. Receive reset email
+4. Click link and set new password",Password updated and able to login with new password,,,
+T004,Business Registration,Logged in user,"1. Navigate to business creation
+2. Enter business details
+3. Submit form",Business created and user assigned as owner,,,
+T005,Team Invitation,Business owner,"1. Navigate to team management
+2. Click 'Invite User'
+3. Enter email and select role
+4. Click Send",Invitation sent to email address,,,
+T006,Accept Invitation,Invitation received,"1. Click invitation link
+2. Create account or login
+3. Accept invitation",User added to business with correct role,,,
+T007,Document Upload,Business user,"1. Navigate to document management
+2. Click Upload
+3. Select file
+4. Click Submit",Document uploaded successfully and visible in list,,,
+T008,Document Search,Documents uploaded,"1. Enter search query
+2. Press search button",Relevant documents displayed in results,,,
+T009,Chat Query with RAG,Documents uploaded,"1. Navigate to chat interface
+2. Enter question about document content
+3. Submit query",Response generated with references to relevant documents,,,
+T010,Storage Integration - Local,Admin user,"1. Configure local storage
+2. Sync documents",Documents synced to local storage successfully,,,
+T011,Storage Integration - S3,Admin user with S3 credentials,"1. Configure S3 storage
+2. Sync documents",Documents synced to S3 bucket successfully,,,
+T012,Storage Integration - Google Drive,Admin user with Google credentials,"1. Configure Google Drive
+2. Sync documents",Documents synced to Google Drive successfully,,,
+T013,Storage Integration - Dropbox,Admin user with Dropbox credentials,"1. Configure Dropbox
+2. Sync documents",Documents synced to Dropbox successfully,,,
+T014,Storage Integration - SFTP,Admin user with SFTP credentials,"1. Configure SFTP
+2. Sync documents",Documents synced to SFTP server successfully,,,
+T015,Billing - Subscription Creation,Business owner,"1. Navigate to billing
+2. Select subscription plan
+3. Enter payment details
+4. Confirm purchase",Subscription activated and features unlocked,,,
+T016,Billing - Usage Tracking,Active subscription,"1. Upload documents
+2. Make chat queries
+3. Check usage dashboard",Usage metrics accurately reflect activity,,,
+T017,Admin Stats Dashboard,Admin user,"1. Login as admin
+2. Navigate to statistics dashboard",System-wide statistics displayed correctly,,,
+T018,Circuit Breaker - Storage,Admin user,"1. Configure storage with invalid credentials
+2. Attempt sync",Proper error message and circuit opens after failures,,,
+T019,Circuit Breaker - AI Service,User,"1. Disable AI service
+2. Send chat queries",Graceful degradation with proper error message,,,
+T020,Performance - Large Document Upload,Business user,"1. Upload 100MB PDF
+2. Check processing status",Document processed within 5 minutes,,,
+T021,Performance - Concurrent Users,Multiple test users,"1. Simulate 50 concurrent users
+2. Each performs standard operations",System maintains response times under load,,,
+T022,Performance - Query Response Time,Documents uploaded,"1. Send complex query
+2. Measure response time",Response delivered in under 1 second,,,
+T023,Security - Authentication Token,Logged in user,"1. Extract auth token
+2. Wait for expiration
+3. Attempt API call with expired token",Request rejected with 401 Unauthorized,,,
+T024,Security - Role-Based Access,Users with different roles,"1. Attempt actions with insufficient permissions",Actions blocked with proper error message,,,
+T025,API - Pagination,Many documents uploaded,"1. Request paginated document list
+2. Navigate through pages",Correct pagination with accurate document counts,,,
+T026,API - Sorting and Filtering,Documents with varied metadata,"1. Apply filters and sorting options
+2. Check results",Results correctly sorted and filtered,,,
+T027,Error Handling - Invalid Input,Logged in user,"1. Send malformed request to API
+2. Check response",Clear error message with appropriate status code,,,
+T028,Error Handling - Service Unavailability,Logged in user,"1. Disable dependent service
+2. Attempt operation requiring that service",Graceful error with retry suggestions,,,
+T029,Monitoring - Metrics Collection,System running,"1. Perform various operations
+2. Check Prometheus metrics endpoint",Metrics accurately reflect system activity,,,
+T030,Tracing - Request Tracking,System with tracing enabled,"1. Perform multi-step operation
+2. Check trace in Jaeger UI",Complete trace showing all operation steps,,,

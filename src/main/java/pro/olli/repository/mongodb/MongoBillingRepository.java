@@ -107,6 +107,28 @@ public class MongoBillingRepository implements BillingRepository {
     }
 
     @Override
+    public Uni<List<BillingTransaction>> getFailedPayments(Instant afterDate) {
+        LOG.infof("MongoDB: Getting failed payments after %s", afterDate);
+
+        // This is a placeholder implementation
+        return Uni.createFrom().item(new ArrayList<>());
+    }
+    
+    @Override
+    public Uni<Optional<BillingTransaction>> getTransactionByExternalId(String externalPaymentId) {
+        LOG.infof("MongoDB: Getting transaction with external payment ID %s", externalPaymentId);
+        
+        if (externalPaymentId == null || externalPaymentId.isBlank()) {
+            LOG.warn("Attempt to get transaction with null or blank external payment ID");
+            return Uni.createFrom().item(Optional.empty());
+        }
+
+        // This is a placeholder implementation
+        // In a complete implementation, you would search MongoDB for the transaction
+        return Uni.createFrom().item(Optional.empty());
+    }
+
+    @Override
     public Uni<Void> updateBusinessUsage(String businessId, int connectorBytes, int documentsProcessed, int queriesExecuted) {
         LOG.infof("MongoDB: Updating usage for business %s", businessId);
 

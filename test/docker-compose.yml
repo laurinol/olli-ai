@@ -90,6 +90,23 @@ services:
     volumes:
       - ./test-files:/config/test-files
     restart: unless-stopped
+    
+  samba:
+    image: dperson/samba
+    container_name: samba
+    ports:
+      - "139:139"
+      - "445:445"
+    environment:
+      - TZ=Etc/UTC
+    command: >-
+      -u "testuser;testpass" 
+      -s "share;/mount;yes;no;yes;all;testuser;testuser"
+      -s "public;/public;yes;no;yes;all;;;"
+      -p
+    volumes:
+      - ./test-files:/mount
+      - ./test-files:/public
 networks:
   default:
     driver: bridge

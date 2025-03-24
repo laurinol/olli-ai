@@ -33,6 +33,17 @@ This diagram shows the step-by-step process flow from:
 - Using search and AI features
 - Administrative operations
 
+### Google Cloud Architecture
+[`google-cloud-architecture.puml`](google-cloud-architecture.puml) - Details the Google Cloud Platform architecture for deploying the application.
+
+This diagram shows the GCP resources and their relationships:
+- Load balancing and frontend delivery
+- Microservices deployed on Cloud Run
+- Firestore database and Cloud Storage
+- Vertex AI and AI services integration
+- CI/CD and operational tooling
+- Security components
+
 ### Invitation System Sequence Diagram
 [`invitation-sequence-diagram.puml`](invitation-sequence-diagram.puml) - Details the interaction flow for the team invitation subsystem.
 

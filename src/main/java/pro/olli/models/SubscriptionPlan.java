@@ -9,7 +9,7 @@ package pro.olli.models;
 public enum SubscriptionPlan {
     FREE("free", 5, 500, 50, false, 0),
     BASIC("basic", 10, 1000, 200, false, 9900),
-    PRO("pro", 50, 5000, 1000, true, 39900),
+    PROFESSIONAL("professional", 50, 5000, 1000, true, 39900),
     ENTERPRISE("enterprise", 200, 20000, 5000, true, 149900);
 
     private final String value;
@@ -60,5 +60,12 @@ public enum SubscriptionPlan {
             }
         }
         return FREE; // Default to FREE plan if unknown
+    }
+    
+    /**
+     * Find a subscription plan by its value string.
+     */
+    public static SubscriptionPlan fromValue(String value) {
+        return fromString(value);
     }
 }

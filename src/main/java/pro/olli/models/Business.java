@@ -23,20 +23,20 @@ public class Business {
     private final Map<String, Object> metadata;
 
     // Usage tracking fields
-    private final int currentConnectorUsageBytes;
-    private final int documentsProcessedThisMonth;
-    private final int queriesThisMonth;
+    private final long currentConnectorUsageBytes;
+    private final long documentsProcessedThisMonth;
+    private final long queriesThisMonth;
 
     // For JSON/serialization frameworks
     protected Business() {
         this(null, null, null, null, null, null,
-            null, null, null, null, null, 0, 0, 0);
+            null, null, null, null, null, 0L, 0L, 0L);
     }
 
     public Business(String id, String name, String subscriptionPlan) {
         this(id, name, subscriptionPlan, SubscriptionStatus.TRIAL.getValue(),
             Instant.now(), Instant.now().plus(30, java.time.temporal.ChronoUnit.DAYS), null,
-            Instant.now(), Instant.now(), null, null, 0, 0, 0);
+            Instant.now(), Instant.now(), null, null, 0L, 0L, 0L);
     }
 
     public Business(String id, String name, String subscriptionPlan,
@@ -44,7 +44,7 @@ public class Business {
                    Instant nextBillingDate, String paymentMethodId,
                    Instant createdAt, Instant updatedAt,
                    Map<String, Object> settings, Map<String, Object> metadata,
-                   int currentConnectorUsageBytes, int documentsProcessedThisMonth, int queriesThisMonth) {
+                   long currentConnectorUsageBytes, long documentsProcessedThisMonth, long queriesThisMonth) {
         this.id = id;
         this.name = name;
         this.subscriptionPlan = subscriptionPlan;
@@ -97,7 +97,7 @@ public class Business {
             currentConnectorUsageBytes, documentsProcessedThisMonth, queriesThisMonth);
     }
 
-    public Business withUsageMetrics(int newConnectorUsageBytes, int newDocumentsProcessed, int newQueries) {
+    public Business withUsageMetrics(long newConnectorUsageBytes, long newDocumentsProcessed, long newQueries) {
         return new Business(id, name, subscriptionPlan, subscriptionStatus,
             subscriptionStartDate, nextBillingDate, paymentMethodId,
             createdAt, Instant.now(), settings, metadata,
@@ -163,15 +163,15 @@ public class Business {
         return metadata;
     }
 
-    public int getCurrentConnectorUsageBytes() {
+    public long getCurrentConnectorUsageBytes() {
         return currentConnectorUsageBytes;
     }
 
-    public int getDocumentsProcessedThisMonth() {
+    public long getDocumentsProcessedThisMonth() {
         return documentsProcessedThisMonth;
     }
 
-    public int getQueriesThisMonth() {
+    public long getQueriesThisMonth() {
         return queriesThisMonth;
     }
 

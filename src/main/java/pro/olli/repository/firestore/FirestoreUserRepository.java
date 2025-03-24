@@ -176,6 +176,24 @@ public class FirestoreUserRepository implements UserRepository {
         .onFailure().transform(e -> new AppException("Failed to retrieve user", e,
             AppException.ErrorType.DATA_ACCESS_ERROR));
     }
+    
+    @Override
+    @Retry(maxRetries = 3,
+        delay = 1000,
+        jitter = 200,
+        maxDuration = 10000,
+        retryOn = Exception.class,
+        abortOn = {AppException.class})
+    @Timeout(value = 5, unit = ChronoUnit.SECONDS)
+    @CircuitBreaker(requestVolumeThreshold = 10,
+        failureRatio = 0.5,
+        delay = 30000,
+        successThreshold = 2)
+    @CircuitBreakerName("firestore-user-get-by-email")
+    public Uni<Optional<User>> getUserByEmail(String email) {
+        // In Firestore implementation, email is the document ID, so getUser and getUserByEmail are the same
+        return getUser(email);
+    }
 
 
     // Business methods - empty placeholder implementations
@@ -208,6 +226,106 @@ public class FirestoreUserRepository implements UserRepository {
     public Uni<Void> updateBusinessUserSyncHistory(String businessId, String userId, BusinessUser updatedUser) {
         LOG.infof("Firestore: Updating history for user with ID: %s for business: %s", userId, businessId);
         return Uni.createFrom().item(() -> null);
+    }
+    
+    @Override
+    public Uni<Boolean> isUserInBusiness(String userId, String businessId) {
+        LOG.infof("Firestore: Checking if user %s is in business %s", userId, businessId);
+        // Placeholder implementation - always returns false
+        return Uni.createFrom().item(false);
+    }
+    
+    @Override
+    public Uni<Boolean> isUserAdmin(String userId, String businessId) {
+        LOG.infof("Firestore: Checking if user %s is admin in business %s", userId, businessId);
+        // Placeholder implementation - always returns false
+        return Uni.createFrom().item(false);
+    }
+    
+    @Override
+    public Uni<List<Business>> getBusinessesDueForBilling(Instant dueDate) {
+        LOG.infof("Firestore: Getting businesses due for billing by %s", dueDate);
+        // Placeholder implementation - return empty list
+        return Uni.createFrom().item(Collections.emptyList());
+    }
+    
+    @Override
+    public Uni<Optional<Business>> getBusinessBySubscriptionId(String subscriptionId) {
+        LOG.infof("Firestore: Looking up business by subscription ID: %s", subscriptionId);
+        
+        return Uni.createFrom().future(
+            firestore.collection("businesses")
+                    .whereEqualTo("metadata.stripeSubscriptionId", subscriptionId)
+                    .limit(1)
+                    .get()
+        ).map(querySnapshot -> {
+            if (querySnapshot.isEmpty()) {
+                LOG.infof("Firestore: No business found for subscription ID: %s", subscriptionId);
+                return Optional.<Business>empty();
+            }
+            
+            // Extract business data from the document
+            Map<String, Object> data = querySnapshot.getDocuments().get(0).getData();
+            String businessId = (String) data.getOrDefault("id", querySnapshot.getDocuments().get(0).getId());
+            String name = (String) data.get("name");
+            String plan = (String) data.get("plan");
+            String status = (String) data.get("status");
+            
+            // Handle timestamps
+            Instant subscriptionStartDate = null;
+            if (data.get("subscriptionStartDate") instanceof Long) {
+                subscriptionStartDate = Instant.ofEpochMilli((Long) data.get("subscriptionStartDate"));
+            }
+            
+            Instant nextBillingDate = null;
+            if (data.get("nextBillingDate") instanceof Long) {
+                nextBillingDate = Instant.ofEpochMilli((Long) data.get("nextBillingDate"));
+            }
+            
+            String paymentMethodId = (String) data.get("paymentMethodId");
+            
+            Instant createdAt = null;
+            if (data.get("createdAt") instanceof Long) {
+                createdAt = Instant.ofEpochMilli((Long) data.get("createdAt"));
+            }
+            
+            Instant updatedAt = null;
+            if (data.get("updatedAt") instanceof Long) {
+                updatedAt = Instant.ofEpochMilli((Long) data.get("updatedAt"));
+            }
+            
+            @SuppressWarnings("unchecked")
+            Map<String, Object> settings = (Map<String, Object>) data.get("settings");
+            
+            @SuppressWarnings("unchecked")
+            Map<String, Object> metadata = (Map<String, Object>) data.get("metadata");
+            
+            // Create the business object with available data
+            Business business = new Business(
+                    businessId,
+                    name,
+                    plan,
+                    status,
+                    subscriptionStartDate != null ? subscriptionStartDate : Instant.now(),
+                    nextBillingDate != null ? nextBillingDate : Instant.now().plusSeconds(30 * 24 * 60 * 60),
+                    paymentMethodId,
+                    createdAt != null ? createdAt : Instant.now(),
+                    updatedAt != null ? updatedAt : Instant.now(),
+                    settings,
+                    metadata,
+                    0L, // currentConnectorUsageBytes
+                    0L, // documentsProcessedThisMonth
+                    0L // queriesThisMonth
+            );
+            
+            LOG.infof("Firestore: Found business %s for subscription ID: %s", businessId, subscriptionId);
+            return Optional.of(business);
+        })
+        .onFailure().invoke(e -> LOG.errorf("Failed to lookup business by subscription ID %s: %s", subscriptionId, e.getMessage()))
+        .onFailure().recoverWithItem(e -> {
+            LOG.errorf("Error retrieving business by subscription ID: %s", e.getMessage());
+            return Optional.<Business>empty();
+        });
     }
     
     // Verification mapping methods

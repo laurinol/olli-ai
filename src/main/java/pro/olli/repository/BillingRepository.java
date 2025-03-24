@@ -46,6 +46,16 @@ public interface BillingRepository {
      */
     Uni<Optional<BillingTransaction>> getLatestBusinessTransaction(
             String businessId, BillingTransaction.TransactionType type);
+            
+    /**
+     * Gets all failed payment transactions after a specific date
+     */
+    Uni<List<BillingTransaction>> getFailedPayments(Instant afterDate);
+    
+    /**
+     * Gets a transaction by its external payment ID (e.g., Stripe PaymentIntent ID)
+     */
+    Uni<Optional<BillingTransaction>> getTransactionByExternalId(String externalPaymentId);
 
     /**
      * Updates business usage metrics

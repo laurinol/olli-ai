@@ -14,6 +14,7 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
+import java.util.ArrayList;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -558,6 +559,170 @@ public class MongoUserRepository implements UserRepository {
             } catch (Exception e) {
                 LOG.errorf("Failed to retrieve business user: %s", e.getMessage());
                 throw new AppException("Failed to retrieve business user", e, AppException.ErrorType.DATA_ACCESS_ERROR);
+            }
+        });
+    }
+
+    @Override
+    public Uni<Boolean> isUserInBusiness(String userId, String businessId) {
+        LOG.infof("MongoDB: Checking if user %s is in business %s", userId, businessId);
+        return Uni.createFrom().item(() -> {
+            try {
+                Document doc = getBusinessUsersCollection().find(Filters.and(
+                    Filters.eq("businessId", businessId),
+                    Filters.eq("id", userId)
+                )).first();
+
+                return doc != null;
+            } catch (Exception e) {
+                LOG.errorf("Failed to check if user is in business: %s", e.getMessage());
+                throw new AppException("Failed to check if user is in business",
+                    e, AppException.ErrorType.DATA_ACCESS_ERROR);
+            }
+        });
+    }
+
+    @Override
+    public Uni<Boolean> isUserAdmin(String userId, String businessId) {
+        LOG.infof("MongoDB: Checking if user %s is admin for business %s", userId, businessId);
+        return Uni.createFrom().item(() -> {
+            try {
+                Document doc = getBusinessUsersCollection().find(Filters.and(
+                    Filters.eq("businessId", businessId),
+                    Filters.eq("id", userId),
+                    Filters.eq("role", "admin")
+                )).first();
+
+                return doc != null;
+            } catch (Exception e) {
+                LOG.errorf("Failed to check if user is admin: %s", e.getMessage());
+                throw new AppException("Failed to check if user is admin",
+                    e, AppException.ErrorType.DATA_ACCESS_ERROR);
+            }
+        });
+    }
+
+    @Override
+    public Uni<Optional<User>> getUserByEmail(String email) {
+        LOG.infof("MongoDB: Retrieving user with email: %s", email);
+        return Uni.createFrom().item(() -> {
+            try {
+                Document doc = getUsersCollection().find(Filters.eq("email", email)).first();
+
+                if (doc == null) {
+                    LOG.debugf("No user found with email: %s", email);
+                    return Optional.empty();
+                }
+
+                User user = documentToUser(doc);
+                LOG.infof("Retrieved user by email: id=%s, email=%s", user.getId(), user.getEmail());
+                return Optional.of(user);
+            } catch (Exception e) {
+                LOG.errorf("Failed to retrieve user with email %s: %s", email, e.getMessage());
+                throw new AppException("Failed to retrieve user by email",
+                    e, AppException.ErrorType.DATA_ACCESS_ERROR);
+            }
+        });
+    }
+
+    @Override
+    public Uni<List<Business>> getBusinessesDueForBilling(Instant dueDate) {
+        LOG.infof("MongoDB: Retrieving businesses due for billing on or before: %s", dueDate);
+        return Uni.createFrom().item(() -> {
+            try {
+                // Find businesses with nextBillingDate on or before the dueDate
+                List<Business> businesses = new ArrayList<>();
+
+                // This is a placeholder implementation
+                // In a real implementation, you would query MongoDB for businesses with nextBillingDate <= dueDate
+
+                return businesses;
+            } catch (Exception e) {
+                LOG.errorf("Failed to retrieve businesses due for billing: %s", e.getMessage());
+                throw new AppException("Failed to retrieve businesses due for billing",
+                    e, AppException.ErrorType.DATA_ACCESS_ERROR);
+            }
+        });
+    }
+    
+    @Override
+    public Uni<Optional<Business>> getBusinessBySubscriptionId(String subscriptionId) {
+        LOG.infof("MongoDB: Looking up business by subscription ID: %s", subscriptionId);
+        return Uni.createFrom().item(() -> {
+            try {
+                // Create a query for the stripeSubscriptionId in metadata
+                Document query = new Document("metadata.stripeSubscriptionId", subscriptionId);
+                Document doc = getBusinessesCollection().find(query).first();
+                
+                if (doc == null) {
+                    LOG.debugf("No business found with subscription ID: %s", subscriptionId);
+                    return Optional.empty();
+                }
+                
+                // Extract business data from the document
+                String id = doc.getString("id");
+                String name = doc.getString("name");
+                String plan = doc.getString("plan");
+                String status = doc.getString("status");
+                
+                // Handle timestamps
+                Instant subscriptionStartDate = null;
+                Object subscriptionStartObj = doc.get("subscriptionStartDate");
+                if (subscriptionStartObj instanceof Long) {
+                    subscriptionStartDate = Instant.ofEpochMilli((Long) subscriptionStartObj);
+                }
+                
+                Instant nextBillingDate = null;
+                Object nextBillingObj = doc.get("nextBillingDate");
+                if (nextBillingObj instanceof Long) {
+                    nextBillingDate = Instant.ofEpochMilli((Long) nextBillingObj);
+                }
+                
+                String paymentMethodId = doc.getString("paymentMethodId");
+                
+                Instant createdAt = null;
+                Object createdAtObj = doc.get("createdAt");
+                if (createdAtObj instanceof Long) {
+                    createdAt = Instant.ofEpochMilli((Long) createdAtObj);
+                }
+                
+                Instant updatedAt = null;
+                Object updatedAtObj = doc.get("updatedAt");
+                if (updatedAtObj instanceof Long) {
+                    updatedAt = Instant.ofEpochMilli((Long) updatedAtObj);
+                }
+                
+                @SuppressWarnings("unchecked")
+                Map<String, Object> settings = (Map<String, Object>) doc.get("settings");
+                
+                @SuppressWarnings("unchecked")
+                Map<String, Object> metadata = (Map<String, Object>) doc.get("metadata");
+                
+                // Create the business object with available data
+                Business business = new Business(
+                        id,
+                        name,
+                        plan,
+                        status,
+                        subscriptionStartDate != null ? subscriptionStartDate : Instant.now(),
+                        nextBillingDate != null ? nextBillingDate : Instant.now().plusSeconds(30 * 24 * 60 * 60),
+                        paymentMethodId,
+                        createdAt != null ? createdAt : Instant.now(),
+                        updatedAt != null ? updatedAt : Instant.now(),
+                        settings,
+                        metadata,
+                        0L, // currentConnectorUsageBytes
+                        0L, // documentsProcessedThisMonth
+                        0L // queriesThisMonth
+                );
+                
+                LOG.infof("MongoDB: Found business %s for subscription ID: %s", id, subscriptionId);
+                return Optional.of(business);
+                
+            } catch (Exception e) {
+                LOG.errorf("Failed to retrieve business by subscription ID %s: %s", subscriptionId, e.getMessage());
+                throw new AppException("Failed to retrieve business by subscription ID",
+                    e, AppException.ErrorType.DATA_ACCESS_ERROR);
             }
         });
     }
