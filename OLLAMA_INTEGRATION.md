@@ -1,106 +1,153 @@
-# Ollama Integration Guide
+# Ollama Integration
 
-This document outlines how to set up and use the Ollama integration with the backend.
+This document describes how to integrate the Olli backend with Ollama, a lightweight LLM server.
 
-## Overview
+## Configuration Options
 
-The backend integrates with Ollama for AI capabilities:
-- Text embeddings generation (`EmbeddingService`)
-- Chat completions (`QueryService`)
+The Olli backend supports two different implementations for Ollama integration:
 
-## Integration Method
+1. **Langchain4j Implementation** (Default)
+   - Uses the langchain4j library as an intermediate layer
+   - Good for complex chains and advanced features
+   - Can be slower and sometimes experiences timeout issues
 
-We use the langchain4j library for Ollama integration:
+2. **Direct Implementation**
+   - Directly calls the Ollama REST API
+   - Faster and more reliable, especially for simple use cases
+   - Avoids the timeout issues that can occur with langchain4j
 
-- Uses the langchain4j library for a clean, robust integration
-- Supports streaming responses 
-- Provides comprehensive error handling
-- Classes: `LangchainEmbeddingService`, `LangchainQueryService`
+## Setup
 
-## Setup Instructions
+### Prerequisites
 
-1. **Install Ollama**
-   - Follow instructions at [ollama.ai/download](https://ollama.ai/download)
+1. Install and run Ollama:
+   ```bash
+   # Install Ollama (macOS)
+   curl -fsSL https://ollama.com/install.sh | sh
+   
+   # Start Ollama
+   ollama serve
+   ```
 
-2. **Start Ollama**
-   - Use the provided script: `./test/config/start-ollama.sh`
-   - This will start Ollama and download required models
+2. Pull the required models:
+   ```bash
+   # Pull the models specified in your configuration
+   ollama pull tinyllama
+   ```
 
-3. **Verify Ollama Status**
-   - Use the checker script: `./test/check-ollama.sh`
-   - This checks if Ollama is running and properly configured
+### Configuration
 
-4. **Configure Application**
-   - In `application.properties` or via environment variables:
+The following properties control Ollama integration:
+
+```properties
+# Enable Ollama as the AI provider (for development)
+%dev.ai.provider=ollama
+
+# Ollama server endpoint
+%dev.ollama.endpoint=http://localhost:11434
+
+# Models to use
+%dev.ollama.embedding.model=tinyllama
+%dev.ollama.chat.model=tinyllama
+
+# Embedding dimension (depends on the model)
+%dev.ollama.embedding.dimension=768
+
+# Implementation to use: "langchain" or "direct"
+%dev.ollama.implementation=direct
+
+# Timeout for connections
+%dev.ollama.connection.timeout.seconds=60
+```
+
+## Choosing an Implementation
+
+To switch between implementations:
+
+1. Using environment variables:
+   ```bash
+   # Use direct implementation
+   export OLLAMA_IMPLEMENTATION=direct
+   
+   # Use langchain4j implementation
+   export OLLAMA_IMPLEMENTATION=langchain
+   ```
+
+2. Using application properties:
    ```properties
-   ai.provider=ollama
-   ollama.endpoint=http://localhost:11434
-   ollama.embedding.model=llama3
-   ollama.embedding.dimension=4096
-   ollama.chat.model=llama3
+   # In application.properties or application-dev.properties
+   ollama.implementation=direct  # or "langchain"
    ```
 
-## Troubleshooting
-
-### Recent Error Fixes
-
-1. **NullPointerException in ResponseBody**
+3. Using helper scripts (for development):
+   ```bash
+   # Switch to direct implementation
+   ./test/use-direct-implementation.sh
+   
+   # Switch to langchain implementation
+   ./test/use-langchain-implementation.sh
    ```
-   java.lang.NullPointerException: Cannot invoke "okhttp3.ResponseBody.byteStream()" because the return value of "retrofit2.Response.body()" is null
-   ```
-   - **Cause**: Ollama server not running or not accessible
-   - **Solution**: Added pre-check for Ollama server availability
-   - **Implementation**: Added health check in `LangchainQueryService` and fallback
-
-2. **Enhanced Logging**
-   - Added debug logging to track request/response flow
-   - Added service availability checks on startup
-   - Created diagnostic tools in the `test` directory
-
-### Common Issues
-
-1. **Ollama Not Running**
-   - Run `./test/config/start-ollama.sh` to start Ollama
-
-2. **Model Not Found**
-   - Ensure models are downloaded: `ollama pull llama3`
-   - Check available models: `ollama list`
-
-3. **Wrong Embedding Dimensions**
-   - Different models produce embeddings of different dimensions
-   - Ensure `ollama.embedding.dimension` matches the model
 
 ## Testing
 
-1. **Test Endpoint**
+Several test scripts are provided to test and compare the different implementations:
+
+1. Test the configuration:
    ```bash
-   curl -X GET http://localhost:8080/test-integration/check-ollama4j
+   ./test/test-ai-config.sh
    ```
 
-2. **Direct API Test**
+2. Test direct API calls:
    ```bash
-   curl -X POST http://localhost:8080/chat/test-query \
-     -H "Content-Type: application/json" \
-     -d '{"prompt":"Hello, how are you?","history":[]}'
+   ./test/test-direct-api.sh "Your query here"
+   ```
+
+3. Test and compare both implementations:
+   ```bash
+   ./test/compare-implementations.sh "Your query here"
+   ```
+
+4. Test direct implementation only:
+   ```bash
+   ./test/test-direct-implementation.sh
    ```
 
 ## Implementation Details
 
-- **Qualification Annotations**
-  - `@AiConfiguredService` - Main qualifier for AI services
-  - `@LangchainService` - Qualifier for langchain4j implementations
-  - `@OllamaImplementation` - Qualifier for Ollama-specific implementations
+### Direct Implementation Classes
 
-- **Key Classes**
-  - `OllamaClientFactory` - Creates and configures Ollama clients
-  - `AiProducer` - Produces the appropriate AI services based on configuration
-  - `LangchainEmbeddingService` - Langchain4j-based embedding service for generating text embeddings
-  - `LangchainQueryService` - Langchain4j-based query service for chat completions
+1. `DirectOllamaEmbeddingService` - Direct implementation of the `EmbeddingService` interface.
+2. `DirectOllamaQueryService` - Direct implementation of the `QueryService` interface.
 
-## Further Improvements
+These classes use Vert.x WebClient for non-blocking HTTP requests to avoid thread-blocking issues.
 
-Potential future improvements:
-1. Add more comprehensive error handling
-2. Add model warmup on startup
-3. Create dedicated health check for Ollama
-4. Add support for additional models beyond llama3
+### Langchain4j Implementation Classes
+
+1. `LangchainEmbeddingService` - Implementation using langchain4j library.
+2. `LangchainQueryService` - Implementation using langchain4j streaming model.
+
+## Troubleshooting
+
+1. **Timeout Issues**:
+   - If experiencing timeouts with langchain4j, switch to the direct implementation
+   - Increase timeout values in application.properties
+
+2. **Model Issues**:
+   - Make sure the models are pulled correctly: `ollama list`
+   - For embedding issues, check that the model supports embeddings
+
+3. **Connection Issues**:
+   - Verify Ollama is running: `pgrep -f "ollama serve"`
+   - Check the endpoint configuration matches where Ollama is running
+
+4. **Debug Endpoints**:
+   - Use `/test-integration/check-ai-config` to check configuration
+   - Use `/test-integration/direct-ollama` to test direct API
+   - Use `/test-integration/simple-ollama` for a simplified response
+
+## Performance Considerations
+
+The direct implementation generally offers better performance for simple queries, 
+especially regarding timeout handling and resource usage. However, langchain4j provides 
+more advanced features for complex AI workflows. Choose the implementation that best
+fits your needs.

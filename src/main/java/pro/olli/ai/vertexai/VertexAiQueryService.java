@@ -7,6 +7,8 @@ package pro.olli.ai.vertexai;
 import com.google.cloud.aiplatform.v1.EndpointName;
 import com.google.cloud.aiplatform.v1.PredictRequest;
 import com.google.cloud.aiplatform.v1.PredictResponse;
+import com.google.cloud.aiplatform.v1.PredictionServiceClient;
+import com.google.cloud.aiplatform.v1.PredictionServiceSettings;
 import com.google.protobuf.Value;
 import com.google.protobuf.util.JsonFormat;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
@@ -26,15 +28,31 @@ import pro.olli.core.resilience.exception.AppException;
 import java.io.IOException;
 import java.util.List;
 
-public class VertexAiQueryService extends VertexAiEmbeddingService implements QueryService {
+import jakarta.enterprise.context.ApplicationScoped;
+
+public class VertexAiQueryService implements QueryService {
 
     private static final Logger LOG = Logger.getLogger(VertexAiQueryService.class);
+
+    protected final PredictionServiceClient predictionServiceClient;
+    private final String projectId;
+    private final String location;
+    private final String endpointId;
 
     @ConfigProperty(name = "gcp.vertex.chat-model", defaultValue = "gemini-1.5-pro")
     String chatModel;
 
-    public VertexAiQueryService() {
-        super(); // Calls parent constructor
+    public VertexAiQueryService(String projectId, String location, String endpointId) {
+        this.projectId = projectId;
+        this.location = location;
+        this.endpointId = endpointId;
+
+        try {
+            PredictionServiceSettings settings = PredictionServiceSettings.newBuilder().build();
+            this.predictionServiceClient = PredictionServiceClient.create(settings);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to initialize PredictionServiceClient", e);
+        }
     }
 
     @Override

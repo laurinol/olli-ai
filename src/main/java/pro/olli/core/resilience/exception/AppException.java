@@ -16,7 +16,8 @@ public class AppException extends RuntimeException {
         VALIDATION_ERROR(false),    // Invalid input
         SYSTEM_ERROR(true),         // Internal server errors
         EXTERNAL_SERVICE_ERROR(true), // Third-party service failures
-        DATA_ACCESS_ERROR(true);     // Data access errors
+        DATA_ACCESS_ERROR(true),     // Data access errors
+        CONFIGURATION_ERROR(false);  // Configuration issues
 
         private final boolean retryable;
 

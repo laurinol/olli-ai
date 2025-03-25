@@ -29,23 +29,22 @@ import java.util.stream.Collectors;
 import pro.olli.ai.EmbeddingService;
 import pro.olli.core.metrics.Timed;
 
+import jakarta.enterprise.context.ApplicationScoped;
+
 public class VertexAiEmbeddingService implements EmbeddingService {
 
     private static final Logger LOG = Logger.getLogger(VertexAiEmbeddingService.class);
 
-    @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai")
-    String projectId;
-
-    @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-west1")
-    String location;
-
-    @ConfigProperty(name = "gcp.vertex.endpoint-id", defaultValue = "your-endpoint-id") // Replace with your deployed endpoint ID
-    String endpointId;
-
     protected final PredictionServiceClient predictionServiceClient;
+    private final String projectId;
+    private final String location;
+    private final String endpointId;
 
-    @Inject
-    public VertexAiEmbeddingService() {
+    public VertexAiEmbeddingService(String projectId, String location, String endpointId) {
+        this.projectId = projectId;
+        this.location = location;
+        this.endpointId = endpointId;
+
         try {
             PredictionServiceSettings settings = PredictionServiceSettings.newBuilder().build();
             this.predictionServiceClient = PredictionServiceClient.create(settings);

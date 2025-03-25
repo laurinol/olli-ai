@@ -17,11 +17,18 @@ public class IndexServiceClientFactory {
     @Produces
     @ApplicationScoped
     public IndexServiceClient createIndexServiceClient() {
-        try {
-            IndexServiceSettings settings = IndexServiceSettings.newBuilder().build();
-            return IndexServiceClient.create(settings);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to initialize IndexServiceClient", e);
+        // Only create a real client if not in development mode
+        if (!"dev".equals(System.getProperty("quarkus.profile"))) {
+            try {
+                IndexServiceSettings settings = IndexServiceSettings.newBuilder().build();
+                return IndexServiceClient.create(settings);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to initialize IndexServiceClient", e);
+            }
         }
+        
+        // Return null for development mode
+        // The SyncWorker will handle this case with its own checks
+        return null;
     }
 }

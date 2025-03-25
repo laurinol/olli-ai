@@ -28,7 +28,7 @@ public class EmbeddingTestProfile implements QuarkusTestProfile {
         config.put("ai.provider", "ollama");
         config.put("ollama.endpoint", "http://localhost:11434");
         config.put("ollama.embedding-model", "nomic-embed-text");
-        config.put("ollama.query-model", "llama3");
+        config.put("ollama.query-model", "tinyllama");
 
         // Enhanced logging for tests
         config.put("quarkus.log.level", "DEBUG");

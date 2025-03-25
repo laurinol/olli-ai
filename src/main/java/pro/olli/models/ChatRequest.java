@@ -11,4 +11,13 @@ public class ChatRequest {
 
     public String prompt;
     public List<ChatMessage> history;
+
+
+    @Override
+    public String toString() {
+        return "ChatRequest{" +
+            "prompt='" + prompt + '\'' +
+            ", history=" + history +
+            '}';
+    }
 }

@@ -14,10 +14,10 @@ import com.google.gson.Gson;
 import io.quarkus.runtime.Startup;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
-import pro.olli.service.BillingService;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import java.io.InputStream;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -31,8 +31,6 @@ import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
 import org.apache.tika.sax.BodyContentHandler;
-import org.xml.sax.ContentHandler;
-import org.xml.sax.SAXException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.faulttolerance.Bulkhead;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
@@ -40,12 +38,17 @@ import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
+import org.xml.sax.ContentHandler;
+import org.xml.sax.SAXException;
+import pro.olli.ai.AiConfiguredService;
 import pro.olli.ai.EmbeddingService;
+import pro.olli.connector.Connector;
+import pro.olli.connector.ConnectorFactory;
 import pro.olli.core.resilience.exception.AppException;
 import pro.olli.models.SyncTask;
 import pro.olli.queue.TaskQueueService;
-import pro.olli.connector.Connector;
-import pro.olli.connector.ConnectorFactory;
+import pro.olli.repository.SyncRepository;
+import pro.olli.service.BillingService;
 
 @ApplicationScoped
 @Startup
@@ -72,30 +75,37 @@ public class SyncWorker {
     int workerMultiplier;
 
     private final ConnectorFactory connectorFactory;
-    private final EmbeddingService embeddingService;  // @Named("ollamaEmbedding") would fix injection
+    private final EmbeddingService embeddingService;
     private final TaskQueueService taskQueueService;
     private final BillingService billingService;
     private final IndexServiceClient indexServiceClient;
     private final ExecutorService executorService;
     private final Gson gson;
     private final int workerCount = Math.max(1, Runtime.getRuntime().availableProcessors() * workerMultiplier);
+    private final SyncRepository syncRepository;
 
     @Inject
     public SyncWorker(ConnectorFactory connectorFactory,
-                     EmbeddingService embeddingService,
-                     TaskQueueService taskQueueService,
-                     BillingService billingService,
-                     IndexServiceClient indexServiceClient) {
+        @AiConfiguredService EmbeddingService embeddingService,
+        TaskQueueService taskQueueService,
+        BillingService billingService,
+        IndexServiceClient indexServiceClient,
+        @Named("mongodb-sync") SyncRepository syncRepository) {
         this.connectorFactory = connectorFactory;
         this.embeddingService = embeddingService;
         this.taskQueueService = taskQueueService;
         this.billingService = billingService;
         this.indexServiceClient = indexServiceClient;
+        this.syncRepository = syncRepository;
         this.gson = new Gson();
         this.executorService = Executors.newFixedThreadPool(
             workerCount,
             new ThreadFactoryBuilder().setNameFormat("sync-worker-%d").build()
         );
+        LOG.infof("SyncWorker initialized with %s and %s in %s mode",
+            embeddingService.getClass().getName(),
+            syncRepository.getClass().getName(),
+            System.getProperty("quarkus.profile", "unknown"));
     }
 
     @PostConstruct
@@ -116,7 +126,7 @@ public class SyncWorker {
 
     private void consumeTasks() {
         LOG.infof("Worker thread starting with backoff parameters: initial=%dms, max=%dms, multiplier=%.2f",
-                 initialBackoffMs, maxBackoffMs, backoffMultiplier);
+            initialBackoffMs, maxBackoffMs, backoffMultiplier);
 
         // Use thread-local atomics for counters that need to be modified in lambda expressions
         final AtomicLong currentBackoff = new AtomicLong(initialBackoffMs);
@@ -136,8 +146,10 @@ public class SyncWorker {
                         // Process the task
                         processTask(dequeuedTask.getTaskId(), dequeuedTask.getJsonPayload())
                             .subscribe().with(
-                                v -> LOG.infof("Processed task %s: %s", dequeuedTask.getTaskId(), dequeuedTask.getJsonPayload()),
-                                e -> LOG.errorf("Failed to process task %s: %s, error: %s", dequeuedTask.getTaskId(), dequeuedTask.getJsonPayload(), e.getMessage())
+                                v -> LOG.infof("Processed task %s: %s", dequeuedTask.getTaskId(),
+                                    dequeuedTask.getJsonPayload()),
+                                e -> LOG.errorf("Failed to process task %s: %s, error: %s", dequeuedTask.getTaskId(),
+                                    dequeuedTask.getJsonPayload(), e.getMessage())
                             );
                     },
                     e -> {
@@ -150,7 +162,7 @@ public class SyncWorker {
 
                         if (count % 100 == 1 || (currentTime - lastLog) > 60000) {
                             LOG.debugf("No tasks available (count: %d), backing off for %d ms: %s",
-                                       count, backoffTime, e.getMessage());
+                                count, backoffTime, e.getMessage());
                             lastLogTimestamp.set(currentTime);
                         }
 
@@ -158,7 +170,7 @@ public class SyncWorker {
                         try {
                             Thread.sleep(backoffTime);
                             // Increase backoff time for next iteration (capped at max)
-                            long newBackoff = Math.min(maxBackoffMs, (long)(backoffTime * backoffMultiplier));
+                            long newBackoff = Math.min(maxBackoffMs, (long) (backoffTime * backoffMultiplier));
                             currentBackoff.set(newBackoff);
                         } catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
@@ -332,17 +344,39 @@ public class SyncWorker {
     @Bulkhead(value = 5) // Limit concurrent requests to Vector Search
     protected Uni<Void> storeInVectorSearchWithFaultTolerance(List<Float> embedding, String file,
         String taskId, String businessId, String userId) {
-        // Existing implementation with improved error handling
         return Uni.createFrom().emitter(emitter -> {
             try {
+                // In development environment, we don't need Vector Search API
+                if ("dev".equals(System.getProperty("quarkus.profile")) || indexServiceClient == null) {
+                    LOG.infof("DEV MODE: Using MongoDB for vector storage instead of Vector Search API");
+                    LOG.infof("DEV MODE: Storing vector for file %s (business: %s, user: %s, dimensions: %d)",
+                        file, businessId, userId, embedding.size());
+
+                    // In dev mode, store in MongoDB instead of Vector Search
+                    syncRepository.storeEmbedding(taskId + "_" + file, businessId, userId, file, embedding)
+                        .subscribe().with(
+                            v -> emitter.complete(null),
+                            e -> {
+                                LOG.errorf("Failed to store embedding in MongoDB: %s", e.getMessage());
+                                emitter.fail(e);
+                            }
+                        );
+                    return; // Don't return a value from the lambda
+                }
+
+                LOG.infof("Storing vector embedding for file %s in project %s, location %s",
+                    file, projectId, location);
+
                 IndexName indexName = IndexName.of(projectId, location, "sync-index");
                 IndexDatapoint datapoint = IndexDatapoint.newBuilder()
                     .setDatapointId(taskId + "_" + file)
                     .addAllFeatureVector(embedding)
                     .addRestricts(
-                        Restriction.newBuilder().setNamespace("businessId").setAllowList(0, businessId).build()) // Fix
-                    .addRestricts(Restriction.newBuilder().setNamespace("userId").setAllowList(1, userId).build())   // Fix
-                    .addRestricts(Restriction.newBuilder().setNamespace("file").setAllowList(2, file).build())       // Fix
+                        Restriction.newBuilder().setNamespace("businessId").addAllowList(businessId).build())
+                    .addRestricts(
+                        Restriction.newBuilder().setNamespace("userId").addAllowList(userId).build())
+                    .addRestricts(
+                        Restriction.newBuilder().setNamespace("file").addAllowList(file).build())
                     .build();
 
                 UpsertDatapointsRequest request = UpsertDatapointsRequest.newBuilder()
@@ -350,11 +384,40 @@ public class SyncWorker {
                     .addDatapoints(datapoint)
                     .build();
 
+                LOG.debugf("Sending request to Vector Search API: %s", request);
                 indexServiceClient.upsertDatapoints(request);
-                LOG.infof("Stored embedding for file %s in Vector Search for task %s", file, taskId);
+                LOG.infof("Successfully stored embedding for file %s in Vector Search for task %s", file, taskId);
                 emitter.complete(null);
             } catch (Exception e) {
                 String errorMsg = "Vector search connector failed for " + file;
+
+                // Enhanced error logging for API issues
+                if (e.getMessage() != null && (
+                    e.getMessage().contains("404") ||
+                    e.getMessage().contains("UNIMPLEMENTED") ||
+                    e.getMessage().contains("NOT_FOUND"))) {
+                    LOG.errorf("Vector Search API unavailable. " +
+                        "Check if the correct project (%s) and location (%s) are configured. Error: %s",
+                        projectId, location, e.getMessage());
+
+                    // In development mode, we'll consider this a non-fatal error
+                    if ("dev".equals(System.getProperty("quarkus.profile"))) {
+                        LOG.info("Development mode: continuing despite Vector Search API error");
+                        emitter.complete(null);
+                        return;
+                    }
+                }
+
+                // Special handling for NullPointerException (likely happens if client is null)
+                if (e instanceof NullPointerException) {
+                    LOG.errorf("NullPointerException in Vector Search client. This may indicate the client was not initialized properly.");
+                    if ("dev".equals(System.getProperty("quarkus.profile"))) {
+                        LOG.info("Development mode: continuing despite Vector Search API error");
+                        emitter.complete(null);
+                        return;
+                    }
+                }
+
                 LOG.error(errorMsg, e);
                 emitter.fail(new AppException(errorMsg, e, AppException.ErrorType.EXTERNAL_SERVICE_ERROR));
             }
@@ -383,8 +446,8 @@ public class SyncWorker {
     }
 
     /**
-     * Extracts text content from various file formats using Apache Tika.
-     * Handles PDF, DOC, DOCX, ODT, RTF, TXT, and many other formats automatically.
+     * Extracts text content from various file formats using Apache Tika. Handles PDF, DOC, DOCX, ODT, RTF, TXT, and
+     * many other formats automatically.
      *
      * @param inputStream The input stream of the file
      * @return A Uni containing the extracted text content

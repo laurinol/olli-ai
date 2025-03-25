@@ -25,6 +25,8 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -79,10 +81,13 @@ public class TestResource {
     @Inject
     @AiConfiguredService
     EmbeddingService embeddingService;
-    
+
     @Inject
     @AiConfiguredService
     QueryService queryService;
+    
+    @Inject
+    io.vertx.mutiny.core.Vertx vertx;
 
     @ConfigProperty(name = "quarkus.mongodb.database", defaultValue = "olli")
     String databaseName;
@@ -203,32 +208,32 @@ public class TestResource {
         // So just return the config info
         return Uni.createFrom().item(Response.ok(config).build());
     }
-    
+
     @GET
     @Path("/check-ollama4j")
     @Produces(MediaType.APPLICATION_JSON)
     public Uni<Response> checkOllama4j() {
         LOG.info("Checking AI services configuration (extended info)");
-        
+
         Map<String, Object> config = new HashMap<>();
         config.put("embeddingServiceType", embeddingService.getClass().getName());
         config.put("queryServiceType", queryService.getClass().getName());
         config.put("ollamaEndpoint", ollamaEndpoint);
         config.put("ollamaModel", ollamaModel);
         config.put("embeddingDimension", embeddingDimension);
-        
+
         // Check if Ollama is running first
         try {
             URL url = new URL(ollamaEndpoint + "/api/tags");
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(3000);
-            
+
             try {
                 int responseCode = connection.getResponseCode();
                 config.put("ollamaAvailable", responseCode == 200);
                 config.put("ollamaResponseCode", responseCode);
-                
+
                 if (responseCode != 200) {
                     config.put("serverStatus", "Ollama server returned unexpected status code: " + responseCode);
                     config.put("troubleshooting", "Run ./test/config/start-ollama.sh to start Ollama");
@@ -241,25 +246,25 @@ public class TestResource {
                 config.put("troubleshooting", "Run ./test/config/start-ollama.sh to start Ollama");
                 return Uni.createFrom().item(Response.ok(config).build());
             }
-            
+
             // Try a direct API call
             URL testUrl = new URL(ollamaEndpoint + "/api/generate");
             HttpURLConnection testConn = (HttpURLConnection) testUrl.openConnection();
             testConn.setRequestMethod("POST");
             testConn.setRequestProperty("Content-Type", "application/json");
             testConn.setDoOutput(true);
-            
+
             String testJson = String.format("{\"model\":\"%s\",\"prompt\":\"test\",\"stream\":false}", ollamaModel);
             try (java.io.OutputStream os = testConn.getOutputStream()) {
                 byte[] input = testJson.getBytes("utf-8");
                 os.write(input, 0, input.length);
             }
-            
+
             try {
                 int testResponseCode = testConn.getResponseCode();
                 config.put("directApiTest", testResponseCode == 200);
                 config.put("directApiResponseCode", testResponseCode);
-                
+
                 if (testResponseCode != 200) {
                     config.put("modelStatus", "Model may not be available. Response code: " + testResponseCode);
                     config.put("troubleshooting", "Run: ollama pull " + ollamaModel);
@@ -270,14 +275,14 @@ public class TestResource {
                 config.put("directApiError", e.getMessage());
                 return Uni.createFrom().item(Response.ok(config).build());
             }
-            
+
             config.put("serverStatus", "Running");
             config.put("modelStatus", "Available");
-            
+
         } catch (Exception e) {
             config.put("checkError", e.getMessage());
         }
-        
+
         // Test the embedding service
         return embeddingService.generateEmbedding("This is a test embedding")
             .map(embedding -> {
@@ -290,8 +295,8 @@ public class TestResource {
             .onFailure().recoverWithItem(e -> {
                 config.put("embeddingGenerated", false);
                 config.put("embeddingError", e.getMessage());
-                
-                if (e.getMessage() != null && 
+
+                if (e.getMessage() != null &&
                     e.getMessage().contains("okhttp3.ResponseBody.byteStream()")) {
                     config.put("rootCause", "Null Response Body");
                     config.put("diagnosis", "This typically happens when Ollama is not running");
@@ -300,7 +305,7 @@ public class TestResource {
                     config.put("rootCause", "Unknown Error");
                     config.put("exceptionType", e.getClass().getName());
                 }
-                
+
                 return Response.ok(config).build();
             });
     }
@@ -1074,6 +1079,329 @@ public class TestResource {
             LOG.errorf("Error handling webhook: %s", e.getMessage());
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
+    }
+    
+    /**
+     * Simple POJO to hold Ollama request data
+     */
+    public static class OllamaRequest {
+        private String model;
+        private String prompt;
+        
+        public String getModel() { return model; }
+        public void setModel(String model) { this.model = model; }
+        
+        public String getPrompt() { return prompt; }
+        public void setPrompt(String prompt) { this.prompt = prompt; }
+    }
+    
+    // NOTE: The direct-ollama and simple-ollama implementations below are for testing and debugging
+    // For production code, use the DirectOllamaQueryService and DirectOllamaEmbeddingService classes
+    // You can set the ollama.implementation=direct property to enable the direct implementation
+    
+    /**
+     * Model for embedding generation request
+     */
+    public static class EmbeddingRequest {
+        private String text;
+        
+        public String getText() { return text; }
+        public void setText(String text) { this.text = text; }
+    }
+    
+    /**
+     * Test endpoint for generating embeddings
+     */
+    @POST
+    @Path("/generate-embedding")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<Response> generateEmbedding(EmbeddingRequest request) {
+        LOG.infof("Generating embedding for text: %s", 
+            request.getText() != null ? request.getText().substring(0, Math.min(50, request.getText().length())) + "..." : "null");
+            
+        if (request.getText() == null || request.getText().isEmpty()) {
+            return Uni.createFrom().item(Response.status(400)
+                .entity(Map.of("error", "Text is required for embedding generation"))
+                .build());
+        }
+        
+        return embeddingService.generateEmbedding(request.getText())
+            .map(embedding -> {
+                Map<String, Object> response = new HashMap<>();
+                response.put("embedding_size", embedding.size());
+                response.put("embedding_preview", embedding.subList(0, Math.min(5, embedding.size())));
+                response.put("type", embeddingService.getClass().getName());
+                response.put("timestamp", System.currentTimeMillis());
+                
+                return Response.ok(response).build();
+            })
+            .onFailure().recoverWithItem(e -> {
+                LOG.errorf("Error generating embedding: %s", e.getMessage());
+                return Response.serverError()
+                    .entity(Map.of(
+                        "error", "Failed to generate embedding",
+                        "message", e.getMessage(),
+                        "type", e.getClass().getName()
+                    ))
+                    .build();
+            });
+    }
+    
+    /**
+     * Simple JSON test endpoint that returns a hardcoded response
+     * Used to debug JSON formatting issues
+     */
+    @GET
+    @Path("/test-json")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response testJson() {
+        LOG.info("Testing JSON response");
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("model", "test-model");
+        response.put("response", "This is a test response");
+        response.put("created_at", System.currentTimeMillis());
+        response.put("done", true);
+        response.put("total_duration", 1234);
+        
+        return Response.ok(response).build();
+    }
+    
+    /**
+     * Simple string test endpoint that returns a hardcoded JSON string
+     * Used to debug JSON formatting issues
+     */
+    @GET
+    @Path("/test-string")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response testJsonString() {
+        LOG.info("Testing JSON string response");
+        
+        String jsonString = "{\"model\":\"test-model\",\"response\":\"This is a test response\",\"createdAt\":" 
+            + System.currentTimeMillis() + ",\"done\":true,\"totalDuration\":1234}";
+        
+        return Response.ok(jsonString)
+            .type(MediaType.APPLICATION_JSON)
+            .build();
+    }
+    
+    /**
+     * Simplified direct Ollama API endpoint using WebClient
+     * This implementation is non-blocking and should not cause blocked thread warnings
+     */
+    @POST
+    @Path("/simple-ollama")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<Response> simpleOllamaQuery(OllamaRequest request) {
+        LOG.infof("Processing simple Ollama query with model %s", request.getModel());
+        
+        String prompt = request.getPrompt();
+        String model = request.getModel();
+        
+        if (prompt == null || prompt.isEmpty()) {
+            return Uni.createFrom().item(
+                Response.status(400)
+                    .entity("{\"error\":\"Prompt is required\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build()
+            );
+        }
+        
+        if (model == null || model.isEmpty()) {
+            model = ollamaModel; // Use default model if not specified
+        }
+        
+        // Use WebClient to make non-blocking request
+        io.vertx.mutiny.ext.web.client.WebClient webClient = io.vertx.mutiny.ext.web.client.WebClient.create(vertx);
+        
+        // Parse URL for host, port, path
+        String urlString = ollamaEndpoint + "/api/generate";
+        java.net.URI uri;
+        try {
+            uri = new java.net.URI(urlString);
+        } catch (Exception e) {
+            LOG.errorf("Invalid URL: %s", urlString, e);
+            return Uni.createFrom().item(
+                Response.status(500)
+                    .entity("{\"error\":\"Invalid Ollama endpoint URL\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build()
+            );
+        }
+        
+        String host = uri.getHost();
+        int port = uri.getPort();
+        if (port == -1) {
+            port = "https".equals(uri.getScheme()) ? 443 : 80;
+        }
+        String path = uri.getPath();
+        
+        // Build request body
+        io.vertx.core.json.JsonObject requestBody = new io.vertx.core.json.JsonObject()
+            .put("model", model)
+            .put("prompt", prompt)
+            .put("stream", false);
+        
+        final String finalModel = model;
+        
+        return webClient.post(port, host, path)
+            .timeout(30000) // 30 second timeout
+            .putHeader("Content-Type", "application/json")
+            .sendJsonObject(requestBody)
+            .map(response -> {
+                LOG.infof("Received response from Ollama with status %d", response.statusCode());
+                
+                if (response.statusCode() == 200) {
+                    // Parse successful response
+                    io.vertx.core.json.JsonObject jsonResponse = response.bodyAsJsonObject();
+                    String ollamaResponse = jsonResponse.getString("response");
+                    
+                    // Create response object
+                    io.vertx.core.json.JsonObject responseJson = new io.vertx.core.json.JsonObject()
+                        .put("model", finalModel)
+                        .put("response", ollamaResponse);
+                    
+                    return Response.ok(responseJson.encode())
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+                } else {
+                    // Handle error
+                    LOG.errorf("Ollama error response: %s", response.bodyAsString());
+                    
+                    io.vertx.core.json.JsonObject errorJson = new io.vertx.core.json.JsonObject()
+                        .put("error", "Ollama API error")
+                        .put("status", response.statusCode())
+                        .put("message", response.bodyAsString());
+                    
+                    return Response.status(response.statusCode())
+                        .entity(errorJson.encode())
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+                }
+            })
+            .onFailure().recoverWithItem(error -> {
+                LOG.errorf("Error calling Ollama API: %s", error.getMessage(), error);
+                
+                io.vertx.core.json.JsonObject errorJson = new io.vertx.core.json.JsonObject()
+                    .put("error", "Failed to communicate with Ollama")
+                    .put("message", error.getMessage())
+                    .put("type", error.getClass().getName());
+                
+                return Response.status(500)
+                    .entity(errorJson.encode())
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+            });
+    }
+
+    /**
+     * Direct Ollama API endpoint using WebClient
+     * Almost the same as simple-ollama but preserves more of the Ollama response
+     */
+    @POST
+    @Path("/direct-ollama")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<Response> directOllamaQuery(OllamaRequest request) {
+        LOG.infof("Processing direct Ollama query with model %s", request.getModel());
+        
+        String prompt = request.getPrompt();
+        String model = request.getModel();
+        
+        if (prompt == null || prompt.isEmpty()) {
+            return Uni.createFrom().item(
+                Response.status(400)
+                    .entity("{\"error\":\"Prompt is required\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build()
+            );
+        }
+        
+        if (model == null || model.isEmpty()) {
+            model = ollamaModel; // Use default model if not specified
+        }
+        
+        // Use WebClient to make non-blocking request
+        io.vertx.mutiny.ext.web.client.WebClient webClient = io.vertx.mutiny.ext.web.client.WebClient.create(vertx);
+        
+        // Parse URL for host, port, path
+        String urlString = ollamaEndpoint + "/api/generate";
+        java.net.URI uri;
+        try {
+            uri = new java.net.URI(urlString);
+        } catch (Exception e) {
+            LOG.errorf("Invalid URL: %s", urlString, e);
+            return Uni.createFrom().item(
+                Response.status(500)
+                    .entity("{\"error\":\"Invalid Ollama endpoint URL\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build()
+            );
+        }
+        
+        String host = uri.getHost();
+        int port = uri.getPort();
+        if (port == -1) {
+            port = "https".equals(uri.getScheme()) ? 443 : 80;
+        }
+        String path = uri.getPath();
+        
+        // Build request body
+        io.vertx.core.json.JsonObject requestBody = new io.vertx.core.json.JsonObject()
+            .put("model", model)
+            .put("prompt", prompt)
+            .put("stream", false);
+        
+        final String finalModel = model;
+        
+        return webClient.post(port, host, path)
+            .timeout(60000) // 60 second timeout
+            .putHeader("Content-Type", "application/json")
+            .sendJsonObject(requestBody)
+            .map(response -> {
+                LOG.infof("Received response from Ollama with status %d", response.statusCode());
+                
+                if (response.statusCode() == 200) {
+                    // For the direct API, just pass through the response with minimal changes
+                    io.vertx.core.json.JsonObject jsonResponse = response.bodyAsJsonObject();
+                    
+                    // Add a couple extra fields but otherwise keep original response
+                    jsonResponse.put("model", finalModel);
+                    jsonResponse.put("query_time", System.currentTimeMillis());
+                    
+                    return Response.ok(jsonResponse.encode())
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+                } else {
+                    // Handle error
+                    LOG.errorf("Ollama error response: %s", response.bodyAsString());
+                    
+                    io.vertx.core.json.JsonObject errorJson = new io.vertx.core.json.JsonObject()
+                        .put("error", "Ollama API error")
+                        .put("status", response.statusCode())
+                        .put("message", response.bodyAsString());
+                    
+                    return Response.status(response.statusCode())
+                        .entity(errorJson.encode())
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+                }
+            })
+            .onFailure().recoverWithItem(error -> {
+                LOG.errorf("Error calling Ollama API: %s", error.getMessage(), error);
+                
+                io.vertx.core.json.JsonObject errorJson = new io.vertx.core.json.JsonObject()
+                    .put("error", "Failed to communicate with Ollama")
+                    .put("message", error.getMessage())
+                    .put("type", error.getClass().getName());
+                
+                return Response.status(500)
+                    .entity(errorJson.encode())
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+            });
     }
 
     // --- Endpoints for E2E Integration Testing ---

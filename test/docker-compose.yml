@@ -45,18 +45,18 @@ services:
       - "5672:5672"
       - "15672:15672"
 
-  ollama:
-    image: ollama/ollama
-    container_name: ollama
-    entrypoint: ["/start-ollama.sh"]
-    volumes:
-      - ./ollama:/root/.ollama
-      - ./config/start-ollama.sh:/start-ollama.sh
-    restart: unless-stopped
-    environment:
-      - OLLAMA_KEEP_ALIVE=24h
-      - OLLAMA_HOST=0.0.0.0
-    ports: [ "11434:11434" ]
+  #ollama:
+  #  image: ollama/ollama
+  #  container_name: ollama
+  #  entrypoint: ["/start-ollama.sh"]
+  #  volumes:
+  #    - ./ollama:/root/.ollama
+  #    - ./config/start-ollama.sh:/start-ollama.sh
+  #  restart: unless-stopped
+  #  environment:
+  #    - OLLAMA_KEEP_ALIVE=24h
+  #    - OLLAMA_HOST=0.0.0.0
+  #  ports: [ "11434:11434" ]
   #ollama-webui:
   #  image: ghcr.io/open-webui/open-webui:ollama
   #  ports:

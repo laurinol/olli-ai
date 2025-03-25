@@ -44,14 +44,8 @@ public class DevJwtAuthMechanism implements HttpAuthenticationMechanism {
             if (token.startsWith(DEV_TOKEN_PREFIX)) {
                 LOG.info("Authenticating dev token: " + token);
 
-                // Extract user ID from token (format: dev-jwt-token-user-xxx...)
-                String[] parts = token.split("-");
-                String userId;
-                if (parts.length > 3) {
-                    userId = parts[3]; // Get the user part
-                } else {
-                    userId = "unknown";
-                }
+                // For development, always use a consistent user ID to make tracking easier
+                String userId = "test-dev-user";
 
                 // Create a security identity with admin role
                 QuarkusSecurityIdentity identity = QuarkusSecurityIdentity.builder()
