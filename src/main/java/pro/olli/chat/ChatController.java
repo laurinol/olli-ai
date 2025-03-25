@@ -7,15 +7,16 @@
  */
 package pro.olli.chat;
 
-import io.quarkus.security.Authenticated;
 import io.smallrye.mutiny.Uni;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.SecurityContext;
+import java.security.Principal;
+import java.util.ArrayList;
+import java.util.List;
 import org.jboss.logging.Logger;
 import pro.olli.ai.ChatMessage;
 import pro.olli.ai.QueryService;
@@ -28,12 +29,8 @@ import pro.olli.repository.Factory;
 import pro.olli.repository.UserRepository;
 import pro.olli.service.BillingService;
 
-import java.security.Principal;
-import java.util.ArrayList;
-import java.util.List;
-
 @Path("/chat")
-@Authenticated
+//@Authenticated
 public class ChatController {
 
     private static final Logger LOG = Logger.getLogger(ChatController.class);
@@ -44,10 +41,10 @@ public class ChatController {
     private final QueryService queryService;
     private final SecurityContext securityContext;
 
-    public ChatController(@Factory ChatRepository chatRepository, 
+    public ChatController(@Factory ChatRepository chatRepository,
                          @Factory UserRepository userRepository,
                          BillingService billingService,
-                         QueryService queryService, 
+                         QueryService queryService,
                          SecurityContext securityContext) {
         this.chatRepository = chatRepository;
         this.userRepository = userRepository;
@@ -61,7 +58,7 @@ public class ChatController {
     @Produces(MediaType.APPLICATION_JSON)
     public Uni<ChatResponse> query(ChatRequest request) {
         String userId = getUserId();
-        
+
         // Get the user to find their business
         return userRepository.getUser(userId)
             .flatMap(userOpt -> {
@@ -69,15 +66,15 @@ public class ChatController {
                     return Uni.createFrom().failure(
                         new IllegalArgumentException("User not found: " + userId));
                 }
-                
+
                 User user = userOpt.get();
                 String businessId = (String) user.getMetadata().get("businessId");
-                
+
                 if (businessId == null) {
                     LOG.warnf("User %s has no business ID, skipping billing checks", userId);
                     return processQuery(userId, request); // Proceed without billing checks
                 }
-                
+
                 // Check if business can make more queries
                 return billingService.checkBusinessLimits(businessId)
                     .flatMap(business -> {
@@ -86,13 +83,13 @@ public class ChatController {
                             return Uni.createFrom().failure(
                                 new IllegalStateException("Query limit exceeded for business"));
                         }
-                        
+
                         // Record query usage
                         return billingService.recordQueryUsage(businessId)
                             .flatMap(v -> processQuery(userId, request));
                     })
                     .onFailure().recoverWithItem(e -> {
-                        if (e instanceof IllegalStateException && 
+                        if (e instanceof IllegalStateException &&
                             e.getMessage().contains("limit exceeded")) {
                             return new ChatResponse(
                                 "Sorry, your organization has reached its monthly query limit. " +
@@ -110,7 +107,7 @@ public class ChatController {
                     });
             });
     }
-    
+
     /**
      * Process the query after billing checks
      */

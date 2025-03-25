@@ -34,6 +34,7 @@ services:
       - "4318:4318"   # OTLP HTTP
     environment:
       - COLLECTOR_OTLP_ENABLED=true
+
   rabbitmq:
     image: rabbitmq:management
     container_name: queue
@@ -43,6 +44,7 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+
   ollama:
     image: ollama/ollama
     container_name: ollama
@@ -64,6 +66,7 @@ services:
   #  volumes:
   #    - ./ollama/ollama-webui:/app/backend/data
   #  restart: always
+
   minio:
     image: minio/minio
     container_name: s3-store
@@ -76,6 +79,7 @@ services:
       - MINIO_ROOT_PASSWORD=pass123
     volumes:
       - ./minio-data:/data
+
   sftp:
     image: lscr.io/linuxserver/openssh-server
     container_name: sftp
@@ -90,7 +94,7 @@ services:
     volumes:
       - ./test-files:/config/test-files
     restart: unless-stopped
-    
+
   samba:
     image: dperson/samba
     container_name: samba
