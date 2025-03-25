@@ -36,6 +36,9 @@ import org.bson.Document;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import pro.olli.ai.AiConfiguredService;
+import pro.olli.ai.EmbeddingService;
+import pro.olli.ai.QueryService;
 import pro.olli.models.BusinessUser;
 import pro.olli.models.SyncHistoryEntry;
 import pro.olli.models.SyncTask;
@@ -73,9 +76,26 @@ public class TestResource {
     @Inject
     MongoClient mongoClient;
 
+    @Inject
+    @AiConfiguredService
+    EmbeddingService embeddingService;
+    
+    @Inject
+    @AiConfiguredService
+    QueryService queryService;
+
     @ConfigProperty(name = "quarkus.mongodb.database", defaultValue = "olli")
     String databaseName;
-    
+
+    @ConfigProperty(name = "ollama.endpoint", defaultValue = "http://localhost:11434")
+    String ollamaEndpoint;
+
+    @ConfigProperty(name = "ollama.embedding.model", defaultValue = "tinyllama")
+    String ollamaModel;
+
+    @ConfigProperty(name = "ollama.embedding.dimension", defaultValue = "768")
+    int embeddingDimension;
+
     // For integration testing with billing and E2E tests
     private String testAuthToken = "test-auth-token-12345";
     private boolean authDisabled = true; // Set to true to disable auth for tests
@@ -160,6 +180,129 @@ public class TestResource {
     public String simpleHealthCheck() {
         LOG.info("Simple health check called - TestResource is active");
         return "OK - TestResource is active";
+    }
+
+    @GET
+    @Path("/check-ai-config")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> checkAiConfig() {
+        LOG.info("Checking AI service configuration");
+
+        // Get class names of the injected services
+        String embeddingServiceClass = embeddingService.getClass().getName();
+        String queryServiceClass = queryService.getClass().getName();
+
+        Map<String, Object> config = new HashMap<>();
+        config.put("embeddingServiceClass", embeddingServiceClass);
+        config.put("queryServiceClass", queryServiceClass);
+        config.put("ollamaEndpoint", ollamaEndpoint);
+        config.put("ollamaModel", ollamaModel);
+        config.put("embeddingDimension", embeddingDimension);
+
+        // We don't have direct access to the health check method through the interface
+        // So just return the config info
+        return Uni.createFrom().item(Response.ok(config).build());
+    }
+    
+    @GET
+    @Path("/check-ollama4j")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> checkOllama4j() {
+        LOG.info("Checking AI services configuration (extended info)");
+        
+        Map<String, Object> config = new HashMap<>();
+        config.put("embeddingServiceType", embeddingService.getClass().getName());
+        config.put("queryServiceType", queryService.getClass().getName());
+        config.put("ollamaEndpoint", ollamaEndpoint);
+        config.put("ollamaModel", ollamaModel);
+        config.put("embeddingDimension", embeddingDimension);
+        
+        // Check if Ollama is running first
+        try {
+            URL url = new URL(ollamaEndpoint + "/api/tags");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(3000);
+            
+            try {
+                int responseCode = connection.getResponseCode();
+                config.put("ollamaAvailable", responseCode == 200);
+                config.put("ollamaResponseCode", responseCode);
+                
+                if (responseCode != 200) {
+                    config.put("serverStatus", "Ollama server returned unexpected status code: " + responseCode);
+                    config.put("troubleshooting", "Run ./test/config/start-ollama.sh to start Ollama");
+                    return Uni.createFrom().item(Response.ok(config).build());
+                }
+            } catch (Exception e) {
+                config.put("ollamaAvailable", false);
+                config.put("ollamaError", e.getMessage());
+                config.put("serverStatus", "Failed to connect to Ollama server");
+                config.put("troubleshooting", "Run ./test/config/start-ollama.sh to start Ollama");
+                return Uni.createFrom().item(Response.ok(config).build());
+            }
+            
+            // Try a direct API call
+            URL testUrl = new URL(ollamaEndpoint + "/api/generate");
+            HttpURLConnection testConn = (HttpURLConnection) testUrl.openConnection();
+            testConn.setRequestMethod("POST");
+            testConn.setRequestProperty("Content-Type", "application/json");
+            testConn.setDoOutput(true);
+            
+            String testJson = String.format("{\"model\":\"%s\",\"prompt\":\"test\",\"stream\":false}", ollamaModel);
+            try (java.io.OutputStream os = testConn.getOutputStream()) {
+                byte[] input = testJson.getBytes("utf-8");
+                os.write(input, 0, input.length);
+            }
+            
+            try {
+                int testResponseCode = testConn.getResponseCode();
+                config.put("directApiTest", testResponseCode == 200);
+                config.put("directApiResponseCode", testResponseCode);
+                
+                if (testResponseCode != 200) {
+                    config.put("modelStatus", "Model may not be available. Response code: " + testResponseCode);
+                    config.put("troubleshooting", "Run: ollama pull " + ollamaModel);
+                    return Uni.createFrom().item(Response.ok(config).build());
+                }
+            } catch (Exception e) {
+                config.put("directApiTest", false);
+                config.put("directApiError", e.getMessage());
+                return Uni.createFrom().item(Response.ok(config).build());
+            }
+            
+            config.put("serverStatus", "Running");
+            config.put("modelStatus", "Available");
+            
+        } catch (Exception e) {
+            config.put("checkError", e.getMessage());
+        }
+        
+        // Test the embedding service
+        return embeddingService.generateEmbedding("This is a test embedding")
+            .map(embedding -> {
+                config.put("embeddingGenerated", true);
+                config.put("embeddingLength", embedding.size());
+                config.put("embedding", embedding.subList(0, Math.min(5, embedding.size())));
+                config.put("status", "OK");
+                return Response.ok(config).build();
+            })
+            .onFailure().recoverWithItem(e -> {
+                config.put("embeddingGenerated", false);
+                config.put("embeddingError", e.getMessage());
+                
+                if (e.getMessage() != null && 
+                    e.getMessage().contains("okhttp3.ResponseBody.byteStream()")) {
+                    config.put("rootCause", "Null Response Body");
+                    config.put("diagnosis", "This typically happens when Ollama is not running");
+                    config.put("solution", "Start Ollama with ./test/config/start-ollama.sh");
+                } else {
+                    config.put("rootCause", "Unknown Error");
+                    config.put("exceptionType", e.getClass().getName());
+                }
+                
+                return Response.ok(config).build();
+            });
     }
 
 
@@ -559,9 +702,9 @@ public class TestResource {
             )).build();
         }
     }
-    
+
     // --- Endpoints for Billing Integration Testing ---
-    
+
     /**
      * Creates a test business for integration tests
      */
@@ -571,16 +714,16 @@ public class TestResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response createTestBusiness(Map<String, Object> business) {
         LOG.infof("Creating test business for integration testing: %s", business);
-        
+
         try {
             String businessId = (String) business.get("id");
             String name = (String) business.get("name");
             String userId = (String) business.get("userId");
-            
+
             if (businessId == null || name == null) {
                 return Response.status(400).entity(Map.of("error", "Business ID and name are required")).build();
             }
-            
+
             // Store this in MongoDB for testing
             Document businessDoc = new Document()
                 .append("id", businessId)
@@ -590,59 +733,59 @@ public class TestResource {
                 .append("updatedAt", System.currentTimeMillis())
                 .append("subscriptionPlan", "free")
                 .append("subscriptionStatus", "trial");
-                
+
             mongoClient.getDatabase(databaseName)
                 .getCollection("businesses")
                 .insertOne(businessDoc);
-                
+
             return Response.ok(business).build();
         } catch (Exception e) {
             LOG.errorf("Error creating test business: %s", e.getMessage());
             return Response.serverError().entity(Map.of("error", e.getMessage())).build();
         }
     }
-    
+
     /**
      * Deletes a test business after integration tests
      */
     @DELETE
     @Path("/test/cleanup-business")
-    public Response cleanupTestBusiness(@HeaderParam("X-User-Id") String userId, 
+    public Response cleanupTestBusiness(@HeaderParam("X-User-Id") String userId,
                                        @HeaderParam("X-Business-Id") String businessId) {
         LOG.infof("Cleaning up test business: %s for user: %s", businessId, userId);
-        
+
         try {
             // Delete business from MongoDB
             if (businessId != null) {
                 mongoClient.getDatabase(databaseName)
                     .getCollection("businesses")
                     .deleteMany(new Document("id", businessId));
-                    
+
                 // Also delete related data
                 mongoClient.getDatabase(databaseName)
                     .getCollection("transactions")
                     .deleteMany(new Document("businessId", businessId));
             }
-            
+
             // Delete user if specified
             if (userId != null) {
                 mongoClient.getDatabase(databaseName)
                     .getCollection("users")
                     .deleteMany(new Document("id", userId));
-                    
+
                 // Delete business_user relationship
                 mongoClient.getDatabase(databaseName)
                     .getCollection("business_users")
                     .deleteMany(new Document("userId", userId));
             }
-            
+
             return Response.noContent().build();
         } catch (Exception e) {
             LOG.errorf("Error cleaning up test business: %s", e.getMessage());
             return Response.serverError().entity(Map.of("error", e.getMessage())).build();
         }
     }
-    
+
     /**
      * Mock endpoint for billing integration tests to create a payment method
      */
@@ -654,10 +797,10 @@ public class TestResource {
                                       @HeaderParam("X-User-Id") String userId,
                                       @HeaderParam("X-Business-Id") String businessId) {
         LOG.infof("Creating test payment method for business: %s", businessId);
-        
+
         // Generate a test payment method ID
         String paymentMethodId = "pm_test_" + System.currentTimeMillis();
-        
+
         Map<String, Object> response = new HashMap<>();
         response.put("id", paymentMethodId);
         response.put("type", "card");
@@ -667,10 +810,10 @@ public class TestResource {
             "exp_month", paymentMethod.get("expiryMonth"),
             "exp_year", paymentMethod.get("expiryYear")
         ));
-        
+
         return Response.ok(response).build();
     }
-    
+
     /**
      * Mock endpoint for billing integration tests to create a payment
      */
@@ -682,11 +825,11 @@ public class TestResource {
                                @HeaderParam("X-User-Id") String userId,
                                @HeaderParam("X-Business-Id") String businessId) {
         LOG.infof("Creating test payment for business: %s", businessId);
-        
+
         // Generate a test payment intent ID
         String paymentIntentId = "pi_test_" + System.currentTimeMillis();
         String clientSecret = "pi_test_secret_" + System.currentTimeMillis();
-        
+
         // Store a transaction record
         Document transaction = new Document()
             .append("id", "txn_" + System.currentTimeMillis())
@@ -700,21 +843,21 @@ public class TestResource {
             .append("status", "PENDING")
             .append("type", "PAYMENT")
             .append("createdAt", System.currentTimeMillis());
-            
+
         mongoClient.getDatabase(databaseName)
             .getCollection("transactions")
             .insertOne(transaction);
-        
+
         Map<String, Object> response = new HashMap<>();
         response.put("id", paymentIntentId);
         response.put("clientSecret", clientSecret);
         response.put("status", "requires_confirmation");
         response.put("amount", payment.get("amount"));
         response.put("currency", payment.get("currency"));
-        
+
         return Response.ok(response).build();
     }
-    
+
     /**
      * Mock endpoint for billing integration tests to get transactions
      */
@@ -724,15 +867,15 @@ public class TestResource {
     public Response getTransactions(@HeaderParam("X-User-Id") String userId,
                                   @HeaderParam("X-Business-Id") String businessId) {
         LOG.infof("Getting transactions for business: %s", businessId);
-        
+
         List<Document> transactions = new ArrayList<>();
         mongoClient.getDatabase(databaseName)
             .getCollection("transactions")
             .find(new Document("businessId", businessId))
             .forEach(doc -> transactions.add(doc));
-            
+
         List<Map<String, Object>> result = new ArrayList<>();
-        
+
         for (Document doc : transactions) {
             Map<String, Object> transaction = new HashMap<>();
             for (String key : doc.keySet()) {
@@ -741,10 +884,10 @@ public class TestResource {
             }
             result.add(transaction);
         }
-        
+
         return Response.ok(result).build();
     }
-    
+
     /**
      * Mock endpoint for billing integration tests to create a subscription
      */
@@ -755,12 +898,12 @@ public class TestResource {
     public Response createSubscription(Map<String, Object> subscription,
                                     @HeaderParam("X-User-Id") String userId,
                                     @HeaderParam("X-Business-Id") String businessId) {
-        LOG.infof("Creating test subscription for business: %s with plan: %s", 
+        LOG.infof("Creating test subscription for business: %s with plan: %s",
                  businessId, subscription.get("plan"));
-                 
+
         // Generate a test subscription ID
         String subscriptionId = "sub_test_" + System.currentTimeMillis();
-        
+
         // Update the business subscription plan
         mongoClient.getDatabase(databaseName)
             .getCollection("businesses")
@@ -775,16 +918,16 @@ public class TestResource {
                     .append("nextBillingDate", System.currentTimeMillis() + (30 * 24 * 60 * 60 * 1000)) // 30 days
                 )
             );
-            
+
         Map<String, Object> response = new HashMap<>();
         response.put("id", subscriptionId);
         response.put("status", "active");
         response.put("plan", subscription.get("plan"));
         response.put("currentPeriodEnd", System.currentTimeMillis() + (30 * 24 * 60 * 60 * 1000));
-        
+
         return Response.ok(response).build();
     }
-    
+
     /**
      * Mock endpoint for billing integration tests to get subscription
      */
@@ -794,34 +937,34 @@ public class TestResource {
     public Response getSubscription(@HeaderParam("X-User-Id") String userId,
                                   @HeaderParam("X-Business-Id") String businessId) {
         LOG.infof("Getting subscription for business: %s", businessId);
-        
+
         Document business = mongoClient.getDatabase(databaseName)
             .getCollection("businesses")
             .find(new Document("id", businessId))
             .first();
-            
+
         if (business == null) {
             return Response.status(404).entity(Map.of("error", "Business not found")).build();
         }
-        
+
         Map<String, Object> subscription = new HashMap<>();
         subscription.put("plan", business.getString("subscriptionPlan"));
         subscription.put("status", business.getString("subscriptionStatus"));
         subscription.put("subscriptionId", business.getString("subscriptionId"));
-        
+
         Long startDate = business.getLong("subscriptionStartDate");
         if (startDate != null) {
             subscription.put("startDate", startDate);
         }
-        
+
         Long nextBillingDate = business.getLong("nextBillingDate");
         if (nextBillingDate != null) {
             subscription.put("nextBillingDate", nextBillingDate);
         }
-        
+
         return Response.ok(subscription).build();
     }
-    
+
     /**
      * Mock endpoint for billing integration tests to update subscription
      */
@@ -832,9 +975,9 @@ public class TestResource {
     public Response updateSubscription(Map<String, Object> update,
                                      @HeaderParam("X-User-Id") String userId,
                                      @HeaderParam("X-Business-Id") String businessId) {
-        LOG.infof("Updating subscription for business: %s to plan: %s", 
+        LOG.infof("Updating subscription for business: %s to plan: %s",
                  businessId, update.get("plan"));
-                 
+
         // Update the business subscription plan
         mongoClient.getDatabase(databaseName)
             .getCollection("businesses")
@@ -845,25 +988,25 @@ public class TestResource {
                     .append("updatedAt", System.currentTimeMillis())
                 )
             );
-            
+
         // Get the updated business
         Document business = mongoClient.getDatabase(databaseName)
             .getCollection("businesses")
             .find(new Document("id", businessId))
             .first();
-            
+
         if (business == null) {
             return Response.status(404).entity(Map.of("error", "Business not found")).build();
         }
-        
+
         Map<String, Object> subscription = new HashMap<>();
         subscription.put("plan", business.getString("subscriptionPlan"));
         subscription.put("status", business.getString("subscriptionStatus"));
         subscription.put("subscriptionId", business.getString("subscriptionId"));
-        
+
         return Response.ok(subscription).build();
     }
-    
+
     /**
      * Mock endpoint for billing integration tests to cancel subscription
      */
@@ -873,7 +1016,7 @@ public class TestResource {
     public Response cancelSubscription(@HeaderParam("X-User-Id") String userId,
                                      @HeaderParam("X-Business-Id") String businessId) {
         LOG.infof("Canceling subscription for business: %s", businessId);
-        
+
         // Update the business subscription status
         mongoClient.getDatabase(databaseName)
             .getCollection("businesses")
@@ -884,13 +1027,13 @@ public class TestResource {
                     .append("updatedAt", System.currentTimeMillis())
                 )
             );
-            
+
         Map<String, Object> response = new HashMap<>();
         response.put("status", "canceling");
-        
+
         return Response.ok(response).build();
     }
-    
+
     /**
      * Mock endpoint for billing integration tests to handle webhook
      */
@@ -900,20 +1043,20 @@ public class TestResource {
     public Response handleWebhook(String payload,
                                 @HeaderParam("Stripe-Signature") String signature) {
         LOG.infof("Handling webhook with signature: %s", signature);
-        
+
         try {
             // Parse the webhook payload as JSON
             Map<String, Object> event = gson.fromJson(payload, Map.class);
-            
+
             // Get the event type
             String eventType = (String) event.get("type");
             LOG.infof("Webhook event type: %s", eventType);
-            
+
             if ("payment_intent.succeeded".equals(eventType)) {
                 Map<String, Object> data = (Map<String, Object>) event.get("data");
                 Map<String, Object> object = (Map<String, Object>) data.get("object");
                 String paymentIntentId = (String) object.get("id");
-                
+
                 // Update the transaction status to COMPLETED
                 mongoClient.getDatabase(databaseName)
                     .getCollection("transactions")
@@ -925,16 +1068,16 @@ public class TestResource {
                         )
                     );
             }
-            
+
             return Response.ok().build();
         } catch (Exception e) {
             LOG.errorf("Error handling webhook: %s", e.getMessage());
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
     }
-    
+
     // --- Endpoints for E2E Integration Testing ---
-    
+
     /**
      * Provides an auth token for E2E tests
      */
@@ -943,25 +1086,25 @@ public class TestResource {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public Response register(Map<String, String> registerRequest) {
-        LOG.infof("Registering user with email: %s and token: %s", 
+        LOG.infof("Registering user with email: %s and token: %s",
                  registerRequest.get("email"), registerRequest.get("token"));
-                 
+
         String email = registerRequest.get("email");
         String token = registerRequest.get("token");
-        
+
         // Store the user in MongoDB for testing
         String userId = "user-" + System.currentTimeMillis();
-        
+
         Document userDoc = new Document()
             .append("id", userId)
             .append("email", email)
             .append("createdAt", System.currentTimeMillis())
             .append("updatedAt", System.currentTimeMillis());
-            
+
         mongoClient.getDatabase(databaseName)
             .getCollection("users")
             .insertOne(userDoc);
-            
+
         // Store the business user association
         // Extract business ID from verification token - in real code this would be looked up
         String businessId = TEST_BUSINESS_ID;
@@ -970,10 +1113,10 @@ public class TestResource {
                 .getCollection("verifications")
                 .find(new Document("token", token))
                 .first();
-                
+
             if (verification != null) {
                 businessId = verification.getString("businessId");
-                
+
                 // Mark verification as verified
                 mongoClient.getDatabase(databaseName)
                     .getCollection("verifications")
@@ -986,25 +1129,25 @@ public class TestResource {
                     );
             }
         }
-        
+
         Document businessUserDoc = new Document()
             .append("userId", userId)
             .append("businessId", businessId)
             .append("email", email)
             .append("role", "admin")
             .append("createdAt", System.currentTimeMillis());
-            
+
         mongoClient.getDatabase(databaseName)
             .getCollection("business_users")
             .insertOne(businessUserDoc);
-        
+
         // Return auth token for testing
         return Response.ok()
             .header("Authorization", "Bearer " + testAuthToken)
             .entity(Map.of("userId", userId, "businessId", businessId))
             .build();
     }
-    
+
     /**
      * Mock endpoint for E2E testing for user profile
      */
@@ -1013,20 +1156,20 @@ public class TestResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response getUserProfile(@HeaderParam("Authorization") String authorization) {
         LOG.infof("Getting user profile with authorization: %s", authorization);
-        
+
         // In real code, we'd extract the user from the token
         // Here we'll just return a hard-coded response for testing
         Map<String, Object> profile = new HashMap<>();
         profile.put("email", "test@example.com");
         profile.put("businessId", TEST_BUSINESS_ID);
         profile.put("role", "admin");
-        
+
         return Response.ok(profile).build();
     }
-    
+
     // Test constant for E2E tests
     private static final String TEST_BUSINESS_ID = "test-business-12345";
-    
+
     /**
      * Mock endpoint for syncing local directory
      */
@@ -1037,20 +1180,20 @@ public class TestResource {
                            @QueryParam("folderId") String folderId,
                            @QueryParam("businessId") String businessId) {
         LOG.infof("Syncing local directory for business: %s, folder: %s", businessId, folderId);
-        
+
         // Generate a task ID
         String taskId = "task-" + System.currentTimeMillis();
-        
+
         // Create a sync task
         String effectiveBusinessId = businessId != null ? businessId : TEST_BUSINESS_ID;
         String userId = "user-12345";
         String source = "local";
         SyncTask task = new SyncTask(effectiveBusinessId, userId, source, folderId);
-        
+
         // Convert to JSON and store in queue
         String taskJson = gson.toJson(task);
         LOG.infof("Created sync task: %s", taskJson);
-        
+
         // Add to queue if there's a queue service available
         try {
             taskQueueService.enqueueTask(taskId, taskJson);
@@ -1065,15 +1208,15 @@ public class TestResource {
                 .append("folderId", task.getFolderId())
                 .append("createdAt", System.currentTimeMillis())
                 .append("jsonPayload", taskJson);
-                
+
             mongoClient.getDatabase(databaseName)
                 .getCollection("sync_tasks")
                 .insertOne(taskDoc);
         }
-        
+
         return Response.ok(Map.of("message", "Sync queued", "taskId", taskId)).build();
     }
-    
+
     /**
      * Mock endpoint for checking sync status
      */
@@ -1083,7 +1226,7 @@ public class TestResource {
     public Response getSyncStatus(@HeaderParam("Authorization") String authorization,
                                @QueryParam("taskId") String taskId) {
         LOG.infof("Checking sync status for task: %s", taskId);
-        
+
         // Create a mock completed status
         Map<String, Object> status = new HashMap<>();
         status.put("taskId", taskId);
@@ -1092,10 +1235,10 @@ public class TestResource {
         status.put("totalBytes", 1024 * 1024);
         status.put("startTime", System.currentTimeMillis() - 5000);
         status.put("endTime", System.currentTimeMillis());
-        
+
         return Response.ok(status).build();
     }
-    
+
     /**
      * Mock endpoint for chat API
      */
@@ -1106,10 +1249,10 @@ public class TestResource {
     public Response chatQuery(@HeaderParam("Authorization") String authorization,
                            pro.olli.models.ChatRequest request) {
         LOG.infof("Processing chat query: %s", request.prompt);
-        
+
         // Create a mock response
         Map<String, Object> response = new HashMap<>();
-        
+
         if (request.prompt.contains("ACME") || request.prompt.contains("contract")) {
             response.put("response", "The ACME contract specifies a 12-month service agreement with " +
                 "quarterly payments of $5,000. The contract includes clauses for service level " +
@@ -1118,9 +1261,9 @@ public class TestResource {
             response.put("response", "I'm sorry, I don't have specific information about that topic. " +
                 "Could you try asking another question about documents you've synced?");
         }
-        
+
         response.put("sources", List.of("contract_acme.pdf"));
-        
+
         return Response.ok(response).build();
     }
 }

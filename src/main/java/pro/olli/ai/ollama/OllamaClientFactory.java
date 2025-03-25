@@ -98,6 +98,29 @@ public class OllamaClientFactory {
             
             if (responseCode != 200) {
                 LOG.warnf("Ollama server at %s returned unexpected status code: %d", endpoint, responseCode);
+                LOG.warnf("Please start Ollama using: ./test/config/start-ollama.sh");
+            }
+            
+            // Test direct API
+            LOG.info("Testing direct API access...");
+            java.net.URL testUrl = new java.net.URL(endpoint + "/api/generate");
+            java.net.HttpURLConnection testConn = (java.net.HttpURLConnection) testUrl.openConnection();
+            testConn.setRequestMethod("POST");
+            testConn.setRequestProperty("Content-Type", "application/json");
+            testConn.setDoOutput(true);
+            
+            String testJson = String.format("{\"model\":\"%s\",\"prompt\":\"test\",\"stream\":false}", modelName);
+            try (java.io.OutputStream os = testConn.getOutputStream()) {
+                byte[] input = testJson.getBytes("utf-8");
+                os.write(input, 0, input.length);
+            }
+            
+            int testResponseCode = testConn.getResponseCode();
+            if (testResponseCode != 200) {
+                LOG.errorf("Direct API test failed with code: %d", testResponseCode);
+                LOG.errorf("Ollama model '%s' may not be available. Run: ollama pull %s", modelName, modelName);
+            } else {
+                LOG.infof("Direct API test successful - model %s is accessible", modelName);
             }
         } catch (Exception e) {
             LOG.errorf("Failed to validate Ollama endpoint %s: %s", endpoint, e.getMessage());
@@ -105,13 +128,20 @@ public class OllamaClientFactory {
         }
         
         try {
-            return OllamaStreamingChatModel.builder()
+            LOG.info("Initializing OllamaStreamingChatModel with langchain4j...");
+            OllamaStreamingChatModel model = OllamaStreamingChatModel.builder()
                 .baseUrl(endpoint)
                 .modelName(modelName)
                 .timeout(java.time.Duration.ofSeconds(15))
                 .build();
+            LOG.info("OllamaStreamingChatModel successfully created");
+            return model;
         } catch (Exception e) {
             LOG.errorf("Error building OllamaStreamingChatModel: %s", e.getMessage());
+            LOG.errorf("Exception type: %s", e.getClass().getName());
+            if (e.getCause() != null) {
+                LOG.errorf("Cause: %s: %s", e.getCause().getClass().getName(), e.getCause().getMessage());
+            }
             throw new RuntimeException("Failed to build OllamaStreamingChatModel", e);
         }
     }

@@ -126,10 +126,47 @@ public class LangchainQueryService implements QueryService {
             int responseCode = connection.getResponseCode();
             if (responseCode != 200) {
                 LOG.errorf("Ollama service is not available, response code: %d", responseCode);
+                LOG.warnf("Please start Ollama using: ./test/config/start-ollama.sh");
                 return fallbackQuery(prompt, history);
             }
+            
+            LOG.infof("Successfully connected to Ollama at %s", ollamaEndpoint);
+            
+            // Check if models are available
+            URL modelsUrl = new URL(ollamaEndpoint + "/api/tags");
+            HttpURLConnection modelsConnection = (HttpURLConnection) modelsUrl.openConnection();
+            modelsConnection.setRequestMethod("GET");
+            int modelsResponseCode = modelsConnection.getResponseCode();
+            
+            if (modelsResponseCode != 200) {
+                LOG.errorf("Failed to retrieve Ollama models, response code: %d", modelsResponseCode);
+                return fallbackQuery(prompt, history);
+            }
+            
+            // Test a basic generation request directly
+            LOG.infof("Testing direct API access to Ollama...");
+            URL testUrl = new URL(ollamaEndpoint + "/api/generate");
+            HttpURLConnection testConnection = (HttpURLConnection) testUrl.openConnection();
+            testConnection.setRequestMethod("POST");
+            testConnection.setRequestProperty("Content-Type", "application/json");
+            testConnection.setDoOutput(true);
+            
+            String testJson = String.format("{\"model\":\"%s\",\"prompt\":\"test\",\"stream\":false}", ollamaModel);
+            try (java.io.OutputStream os = testConnection.getOutputStream()) {
+                byte[] input = testJson.getBytes("utf-8");
+                os.write(input, 0, input.length);
+            }
+            
+            int testResponseCode = testConnection.getResponseCode();
+            if (testResponseCode != 200) {
+                LOG.errorf("Test generation failed, response code: %d", testResponseCode);
+                return fallbackQuery(prompt, history);
+            }
+            
+            LOG.infof("Direct API access to Ollama is working");
         } catch (Exception e) {
             LOG.errorf("Failed to verify Ollama service before query: %s", e.getMessage());
+            LOG.warnf("Ollama service unavailable. Please start Ollama using: ./test/config/start-ollama.sh");
             return fallbackQuery(prompt, history);
         }
         
@@ -181,12 +218,26 @@ public class LangchainQueryService implements QueryService {
                         @Override
                         public void onError(Throwable error) {
                             LOG.errorf("Error in streaming response: %s", error.getMessage());
+                            if (error.getMessage() != null && 
+                                error.getMessage().contains("okhttp3.ResponseBody.byteStream()")) {
+                                LOG.errorf("Detected null response body error - Ollama server is likely not running");
+                                LOG.warnf("Please start Ollama using: ./test/config/start-ollama.sh");
+                                LOG.warnf("And pull the required model: ollama pull llama3");
+                            }
                             exception[0] = new Exception(error);
                             latch.countDown();
                         }
                     });
                 } catch (Exception e) {
                     LOG.errorf("Failed to start streaming: %s", e.getMessage());
+                    if (e.getMessage() != null && 
+                        e.getMessage().contains("okhttp3.ResponseBody.byteStream()")) {
+                        LOG.errorf("Detected null response body error - Ollama server is likely not running");
+                        LOG.warnf("Please start Ollama using: ./test/config/start-ollama.sh");
+                        LOG.warnf("And pull the required model: ollama pull llama3");
+                        emitter.complete(fallbackQuery(prompt, history).await().indefinitely());
+                        return;
+                    }
                     emitter.fail(new AppException("Failed to start streaming from Ollama", e,
                         AppException.ErrorType.EXTERNAL_SERVICE_ERROR));
                     return;
@@ -227,7 +278,9 @@ public class LangchainQueryService implements QueryService {
         LOG.warnf("Using fallback query generation for prompt of length: %d", prompt.length());
         return Uni.createFrom().item(() -> {
             String fallbackResponse = "I'm sorry, but I'm currently experiencing technical difficulties. " +
-                "Please try again in a few moments or contact support if the issue persists.";
+                "The Ollama service appears to be unavailable. " +
+                "Please make sure Ollama is running by executing './test/config/start-ollama.sh' " +
+                "and verify it's properly configured with the llama3 model.";
             return fallbackResponse;
         });
     }
