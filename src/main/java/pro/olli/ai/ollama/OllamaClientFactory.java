@@ -109,8 +109,6 @@ public class OllamaClientFactory {
                 .baseUrl(endpoint)
                 .modelName(modelName)
                 .timeout(java.time.Duration.ofSeconds(15))
-                .logRequests(true)
-                .logResponses(true)
                 .build();
         } catch (Exception e) {
             LOG.errorf("Error building OllamaStreamingChatModel: %s", e.getMessage());
