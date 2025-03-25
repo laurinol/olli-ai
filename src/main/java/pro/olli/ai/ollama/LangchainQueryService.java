@@ -116,159 +116,223 @@ public class LangchainQueryService implements QueryService {
     public Uni<String> query(String prompt, List<pro.olli.ai.ChatMessage> history) {
         LOG.infof("Querying Ollama with langchain4j model: %s", ollamaModel);
         
-        // First check if the Ollama service is available
-        try {
-            URL healthUrl = new URL(ollamaEndpoint + "/api/tags");
-            HttpURLConnection connection = (HttpURLConnection) healthUrl.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(3000);
+        // We'll use Mutiny Uni to handle non-blocking verification of the Ollama service
+        return checkOllamaServiceAvailability()
+            .onItem().transformToUni(available -> {
+                if (!available) {
+                    LOG.warnf("Ollama service unavailable, using fallback response");
+                    return fallbackQuery(prompt, history);
+                }
+                
+                // Service is available, proceed with the actual query
+                return executeStreamingQuery(prompt, history);
+            });
+    }
+    
+    /**
+     * Non-blocking check for Ollama service availability
+     */
+    private Uni<Boolean> checkOllamaServiceAvailability() {
+        return Uni.createFrom().emitter(emitter -> {
+            // Use vertx to perform HTTP requests without blocking
+            io.vertx.mutiny.core.Vertx vertx = io.vertx.mutiny.core.Vertx.vertx();
+            io.vertx.mutiny.ext.web.client.WebClient client = io.vertx.mutiny.ext.web.client.WebClient.create(vertx);
             
-            int responseCode = connection.getResponseCode();
-            if (responseCode != 200) {
-                LOG.errorf("Ollama service is not available, response code: %d", responseCode);
-                LOG.warnf("Please start Ollama using: ./test/config/start-ollama.sh");
-                return fallbackQuery(prompt, history);
+            // Extract host and port from endpoint URL
+            String host;
+            int port;
+            try {
+                URL url = new URL(ollamaEndpoint);
+                host = url.getHost();
+                port = url.getPort() != -1 ? url.getPort() : 80;
+            } catch (Exception e) {
+                LOG.errorf("Invalid Ollama endpoint URL: %s, error: %s", ollamaEndpoint, e.getMessage());
+                emitter.complete(false);
+                return;
             }
             
-            LOG.infof("Successfully connected to Ollama at %s", ollamaEndpoint);
-            
-            // Check if models are available
-            URL modelsUrl = new URL(ollamaEndpoint + "/api/tags");
-            HttpURLConnection modelsConnection = (HttpURLConnection) modelsUrl.openConnection();
-            modelsConnection.setRequestMethod("GET");
-            int modelsResponseCode = modelsConnection.getResponseCode();
-            
-            if (modelsResponseCode != 200) {
-                LOG.errorf("Failed to retrieve Ollama models, response code: %d", modelsResponseCode);
-                return fallbackQuery(prompt, history);
-            }
-            
-            // Test a basic generation request directly
-            LOG.infof("Testing direct API access to Ollama...");
-            URL testUrl = new URL(ollamaEndpoint + "/api/generate");
-            HttpURLConnection testConnection = (HttpURLConnection) testUrl.openConnection();
-            testConnection.setRequestMethod("POST");
-            testConnection.setRequestProperty("Content-Type", "application/json");
-            testConnection.setDoOutput(true);
-            
-            String testJson = String.format("{\"model\":\"%s\",\"prompt\":\"test\",\"stream\":false}", ollamaModel);
-            try (java.io.OutputStream os = testConnection.getOutputStream()) {
-                byte[] input = testJson.getBytes("utf-8");
-                os.write(input, 0, input.length);
-            }
-            
-            int testResponseCode = testConnection.getResponseCode();
-            if (testResponseCode != 200) {
-                LOG.errorf("Test generation failed, response code: %d", testResponseCode);
-                return fallbackQuery(prompt, history);
-            }
-            
-            LOG.infof("Direct API access to Ollama is working");
-        } catch (Exception e) {
-            LOG.errorf("Failed to verify Ollama service before query: %s", e.getMessage());
-            LOG.warnf("Ollama service unavailable. Please start Ollama using: ./test/config/start-ollama.sh");
-            return fallbackQuery(prompt, history);
-        }
+            // Check tags endpoint
+            client.get(port, host, "/api/tags")
+                .send()
+                .subscribe().with(
+                    response -> {
+                        if (response.statusCode() == 200) {
+                            LOG.infof("Successfully connected to Ollama at %s", ollamaEndpoint);
+                            
+                            // Now test model availability with a generate request
+                            testModelAvailability(client, host, port, emitter, vertx);
+                        } else {
+                            LOG.errorf("Ollama service is not available, response code: %d", response.statusCode());
+                            LOG.warnf("Please start Ollama using: ./test/config/start-ollama.sh");
+                            vertx.close();
+                            emitter.complete(false);
+                        }
+                    },
+                    error -> {
+                        LOG.errorf("Failed to connect to Ollama service: %s", error.getMessage());
+                        LOG.warnf("Ollama service unavailable. Please start Ollama using: ./test/config/start-ollama.sh");
+                        vertx.close();
+                        emitter.complete(false);
+                    }
+                );
+        });
+    }
+    
+    /**
+     * Non-blocking test for model availability
+     */
+    private void testModelAvailability(io.vertx.mutiny.ext.web.client.WebClient client, 
+                                      String host, int port, 
+                                      io.smallrye.mutiny.subscription.UniEmitter<? super Boolean> emitter,
+                                      io.vertx.mutiny.core.Vertx vertx) {
+        LOG.infof("Testing direct API access to Ollama...");
+        
+        io.vertx.core.json.JsonObject testJson = new io.vertx.core.json.JsonObject()
+            .put("model", ollamaModel)
+            .put("prompt", "test")
+            .put("stream", false);
+        
+        client.post(port, host, "/api/generate")
+            .putHeader("Content-Type", "application/json")
+            .sendJson(testJson)
+            .subscribe().with(
+                response -> {
+                    if (response.statusCode() == 200) {
+                        LOG.infof("Direct API access to Ollama is working, model %s is available", ollamaModel);
+                        vertx.close();
+                        emitter.complete(true);
+                    } else {
+                        LOG.errorf("Test generation failed, response code: %d", response.statusCode());
+                        LOG.errorf("The model '%s' is not available on this Ollama server", ollamaModel);
+                        LOG.warnf("Please run the following command to download the required model: ollama pull %s", ollamaModel);
+                        vertx.close();
+                        emitter.complete(false);
+                    }
+                },
+                error -> {
+                    LOG.errorf("Failed to test model availability: %s", error.getMessage());
+                    vertx.close();
+                    emitter.complete(false);
+                }
+            );
+    }
+    
+    /**
+     * Execute the actual streaming query using langchain4j
+     */
+    private Uni<String> executeStreamingQuery(String prompt, List<pro.olli.ai.ChatMessage> history) {
         
         return Uni.createFrom().emitter(emitter -> {
+            // Convert our ChatMessage format to langchain4j format
+            List<dev.langchain4j.data.message.ChatMessage> messages = new ArrayList<>();
+            
+            // Add a system message to start
+            messages.add(new SystemMessage("You are a helpful AI assistant."));
+            
+            // Add history messages
+            if (history != null && !history.isEmpty()) {
+                for (pro.olli.ai.ChatMessage msg : history) {
+                    if ("user".equalsIgnoreCase(msg.role)) {
+                        messages.add(new UserMessage(msg.content));
+                    } else {
+                        messages.add(new AiMessage(msg.content));
+                    }
+                }
+            }
+            
+            // Add the current prompt as a user message
+            messages.add(new UserMessage(prompt));
+            
+            LOG.debugf("Sending message to Ollama: %s", messages);
+            
+            // Create a StringBuilder to collect streaming response
+            StringBuilder responseBuilder = new StringBuilder();
+            
+            // Create a CountDownLatch to wait for completion in a worker thread
+            final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            
+            // Handle exceptions in streaming
+            final Exception[] exception = new Exception[1];
+            
             try {
-                // Convert our ChatMessage format to langchain4j format
-                List<dev.langchain4j.data.message.ChatMessage> messages = new ArrayList<>();
-                
-                // Add a system message to start
-                messages.add(new SystemMessage("You are a helpful AI assistant."));
-                
-                // Add history messages
-                if (history != null && !history.isEmpty()) {
-                    for (pro.olli.ai.ChatMessage msg : history) {
-                        if ("user".equalsIgnoreCase(msg.role)) {
-                            messages.add(new UserMessage(msg.content));
-                        } else {
-                            messages.add(new AiMessage(msg.content));
-                        }
-                    }
-                }
-                
-                // Add the current prompt as a user message
-                messages.add(new UserMessage(prompt));
-                
-                LOG.debugf("Sending message to Ollama: %s", messages);
-                
-                // Create a StringBuilder to collect streaming response
-                StringBuilder responseBuilder = new StringBuilder();
-                
-                // Create a CountDownLatch to wait for completion
-                java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-                
-                // Handle exceptions in streaming
-                final Exception[] exception = new Exception[1];
-                
-                try {
-                    // Stream the chat response
-                    chatModel.generate(messages, new StreamingResponseHandler<AiMessage>() {
-                        @Override
-                        public void onNext(String token) {
-                            responseBuilder.append(token);
-                        }
-                        
-                        public void onComplete(AiMessage message) {
-                            latch.countDown();
-                        }
-                        
-                        @Override
-                        public void onError(Throwable error) {
-                            LOG.errorf("Error in streaming response: %s", error.getMessage());
-                            if (error.getMessage() != null && 
-                                error.getMessage().contains("okhttp3.ResponseBody.byteStream()")) {
-                                LOG.errorf("Detected null response body error - Ollama server is likely not running");
-                                LOG.warnf("Please start Ollama using: ./test/config/start-ollama.sh");
-                                LOG.warnf("And pull the required model: ollama pull llama3");
+                // Create a worker thread to handle the potentially blocking operation
+                // This is needed because OllamaStreamingChatModel's implementation might block
+                java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+                executor.submit(() -> {
+                    try {
+                        chatModel.generate(messages, new StreamingResponseHandler<AiMessage>() {
+                            @Override
+                            public void onNext(String token) {
+                                responseBuilder.append(token);
                             }
-                            exception[0] = new Exception(error);
-                            latch.countDown();
+                            
+                            public void onComplete(AiMessage message) {
+                                latch.countDown();
+                            }
+                            
+                            @Override
+                            public void onError(Throwable error) {
+                                LOG.errorf("Error in streaming response: %s", error.getMessage());
+                                if (error.getMessage() != null && 
+                                    error.getMessage().contains("okhttp3.ResponseBody.byteStream()")) {
+                                    LOG.errorf("Detected null response body error - Ollama server is likely not running");
+                                    LOG.warnf("Please start Ollama using: ./test/config/start-ollama.sh");
+                                    LOG.warnf("And pull the required model: ollama pull llama3");
+                                }
+                                exception[0] = new Exception(error);
+                                latch.countDown();
+                            }
+                        });
+                        
+                        // Wait for streaming to complete (with timeout)
+                        boolean completed = latch.await(15, java.util.concurrent.TimeUnit.SECONDS);
+                        
+                        // Check if an exception occurred
+                        if (exception[0] != null) {
+                            emitter.fail(exception[0]);
+                            return;
                         }
-                    });
-                } catch (Exception e) {
-                    LOG.errorf("Failed to start streaming: %s", e.getMessage());
-                    if (e.getMessage() != null && 
-                        e.getMessage().contains("okhttp3.ResponseBody.byteStream()")) {
-                        LOG.errorf("Detected null response body error - Ollama server is likely not running");
-                        LOG.warnf("Please start Ollama using: ./test/config/start-ollama.sh");
-                        LOG.warnf("And pull the required model: ollama pull llama3");
-                        emitter.complete(fallbackQuery(prompt, history).await().indefinitely());
-                        return;
+                        
+                        // Check if streaming timed out
+                        if (!completed) {
+                            emitter.fail(new AppException("Timed out waiting for Ollama chat response",
+                                AppException.ErrorType.EXTERNAL_SERVICE_ERROR));
+                            return;
+                        }
+                        
+                        String content = responseBuilder.toString();
+                        if (content == null || content.isBlank()) {
+                            emitter.fail(new AppException("Ollama returned empty chat response",
+                                AppException.ErrorType.EXTERNAL_SERVICE_ERROR));
+                            return;
+                        }
+                        
+                        LOG.infof("Generated chat response with Ollama: %s", 
+                            content.length() > 100 ? content.substring(0, 100) + "..." : content);
+                        emitter.complete(content);
+                    } catch (Exception e) {
+                        LOG.errorf("Failed to generate chat response with Ollama: %s", e.getMessage());
+                        if (e.getMessage() != null && 
+                            e.getMessage().contains("okhttp3.ResponseBody.byteStream()")) {
+                            LOG.errorf("Detected null response body error - Ollama server is likely not running");
+                            LOG.warnf("Please start Ollama using: ./test/config/start-ollama.sh");
+                            LOG.warnf("And pull the required model: ollama pull llama3");
+                            fallbackQuery(prompt, history)
+                                .subscribe().with(
+                                    fallback -> emitter.complete(fallback),
+                                    error -> emitter.fail(error)
+                                );
+                        } else {
+                            emitter.fail(new AppException("Failed to generate chat response with Ollama", e,
+                                AppException.ErrorType.EXTERNAL_SERVICE_ERROR));
+                        }
+                    } finally {
+                        executor.shutdown();
                     }
-                    emitter.fail(new AppException("Failed to start streaming from Ollama", e,
-                        AppException.ErrorType.EXTERNAL_SERVICE_ERROR));
-                    return;
-                }
-                
-                // Wait for streaming to complete (with timeout)
-                boolean completed = latch.await(15, java.util.concurrent.TimeUnit.SECONDS);
-                
-                // Check if an exception occurred
-                if (exception[0] != null) {
-                    throw exception[0];
-                }
-                
-                // Check if streaming timed out
-                if (!completed) {
-                    throw new AppException("Timed out waiting for Ollama chat response",
-                        AppException.ErrorType.EXTERNAL_SERVICE_ERROR);
-                }
-                
-                String content = responseBuilder.toString();
-                if (content == null || content.isBlank()) {
-                    throw new AppException("Ollama returned empty chat response",
-                        AppException.ErrorType.EXTERNAL_SERVICE_ERROR);
-                }
-                
-                LOG.infof("Generated chat response with Ollama: %s", 
-                    content.length() > 100 ? content.substring(0, 100) + "..." : content);
-                emitter.complete(content);
+                });
             } catch (Exception e) {
-                LOG.errorf("Failed to generate chat response with Ollama: %s", e.getMessage());
-                emitter.fail(new AppException("Failed to generate chat response with Ollama", e,
+                LOG.errorf("Failed to submit streaming task: %s", e.getMessage());
+                emitter.fail(new AppException("Failed to start streaming from Ollama", e,
                     AppException.ErrorType.EXTERNAL_SERVICE_ERROR));
             }
         });
@@ -278,9 +342,10 @@ public class LangchainQueryService implements QueryService {
         LOG.warnf("Using fallback query generation for prompt of length: %d", prompt.length());
         return Uni.createFrom().item(() -> {
             String fallbackResponse = "I'm sorry, but I'm currently experiencing technical difficulties. " +
-                "The Ollama service appears to be unavailable. " +
-                "Please make sure Ollama is running by executing './test/config/start-ollama.sh' " +
-                "and verify it's properly configured with the llama3 model.";
+                "This is likely because either:\n\n" +
+                "1. The Ollama service is not running. Start it with: './test/config/start-ollama.sh'\n" +
+                "2. The required model 'llama3' is not installed. Install it with: 'ollama pull llama3'\n\n" +
+                "Please check the server logs for more detailed information.";
             return fallbackResponse;
         });
     }

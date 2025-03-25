@@ -86,46 +86,12 @@ public class OllamaClientFactory {
     public static OllamaStreamingChatModel createOllamaChatModel(String endpoint, String modelName) {
         LOG.infof("Creating OllamaStreamingChatModel with endpoint: %s, model: %s", endpoint, modelName);
         
-        // Verify endpoint is accessible
-        try {
-            java.net.URL url = new java.net.URL(endpoint + "/api/tags");
-            java.net.HttpURLConnection connection = (java.net.HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(5000);
-            
-            int responseCode = connection.getResponseCode();
-            LOG.infof("Ollama endpoint test - response code: %d", responseCode);
-            
-            if (responseCode != 200) {
-                LOG.warnf("Ollama server at %s returned unexpected status code: %d", endpoint, responseCode);
-                LOG.warnf("Please start Ollama using: ./test/config/start-ollama.sh");
-            }
-            
-            // Test direct API
-            LOG.info("Testing direct API access...");
-            java.net.URL testUrl = new java.net.URL(endpoint + "/api/generate");
-            java.net.HttpURLConnection testConn = (java.net.HttpURLConnection) testUrl.openConnection();
-            testConn.setRequestMethod("POST");
-            testConn.setRequestProperty("Content-Type", "application/json");
-            testConn.setDoOutput(true);
-            
-            String testJson = String.format("{\"model\":\"%s\",\"prompt\":\"test\",\"stream\":false}", modelName);
-            try (java.io.OutputStream os = testConn.getOutputStream()) {
-                byte[] input = testJson.getBytes("utf-8");
-                os.write(input, 0, input.length);
-            }
-            
-            int testResponseCode = testConn.getResponseCode();
-            if (testResponseCode != 200) {
-                LOG.errorf("Direct API test failed with code: %d", testResponseCode);
-                LOG.errorf("Ollama model '%s' may not be available. Run: ollama pull %s", modelName, modelName);
-            } else {
-                LOG.infof("Direct API test successful - model %s is accessible", modelName);
-            }
-        } catch (Exception e) {
-            LOG.errorf("Failed to validate Ollama endpoint %s: %s", endpoint, e.getMessage());
-            LOG.warnf("Make sure Ollama is running and accessible. You can start it with: test/config/start-ollama.sh");
-        }
+        // We will log basic info but won't block on HTTP checks - those will be done reactively
+        // where needed in the application flow
+        LOG.infof("Using Ollama endpoint: %s with model: %s", endpoint, modelName);
+        LOG.infof("If you experience connection issues, check if Ollama is running with: ./test/check-ollama.sh");
+        LOG.infof("To start Ollama: ./test/config/start-ollama.sh");
+        LOG.infof("To download the model: ollama pull %s", modelName);
         
         try {
             LOG.info("Initializing OllamaStreamingChatModel with langchain4j...");
