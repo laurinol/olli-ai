@@ -15,6 +15,7 @@ import org.eclipse.microprofile.health.Liveness;
 import org.eclipse.microprofile.health.Readiness;
 import org.jboss.logging.Logger;
 import pro.olli.ai.AiConfiguredService;
+import pro.olli.ai.AiImplementationType;
 import pro.olli.ai.EmbeddingService;
 import pro.olli.connector.ConnectorFactory;
 

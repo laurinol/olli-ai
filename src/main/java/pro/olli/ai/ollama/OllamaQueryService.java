@@ -14,6 +14,7 @@ import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
+import pro.olli.ai.AiImplementationType;
 import pro.olli.ai.ChatMessage;
 import pro.olli.ai.QueryService;
 import pro.olli.core.metrics.Timed;
@@ -27,6 +28,7 @@ import java.util.List;
  * Direct implementation of QueryService that calls Ollama API directly.
  * This implementation is lightweight and efficient.
  */
+@ApplicationScoped
 public class OllamaQueryService implements QueryService {
 
     private static final Logger LOG = Logger.getLogger(OllamaQueryService.class);
@@ -36,7 +38,10 @@ public class OllamaQueryService implements QueryService {
     private final String ollamaModel;
 
     @Inject
-    public OllamaQueryService(io.vertx.mutiny.core.Vertx vertx, String ollamaEndpoint, String ollamaModel) {
+    public OllamaQueryService(
+            io.vertx.mutiny.core.Vertx vertx,
+            @ConfigProperty(name = "ollama.endpoint", defaultValue = "http://localhost:11434") String ollamaEndpoint,
+            @ConfigProperty(name = "ollama.chat.model", defaultValue = "tinyllama") String ollamaModel) {
         this.vertx = vertx;
         this.ollamaEndpoint = ollamaEndpoint;
         this.ollamaModel = ollamaModel;

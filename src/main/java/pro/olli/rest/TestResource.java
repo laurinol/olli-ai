@@ -12,6 +12,7 @@ import io.quarkus.arc.profile.IfBuildProfile;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -39,6 +40,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import pro.olli.ai.AiConfiguredService;
+import pro.olli.ai.AiImplementationType;
+import pro.olli.ai.ChatMessage;
 import pro.olli.ai.EmbeddingService;
 import pro.olli.ai.QueryService;
 import pro.olli.models.BusinessUser;
@@ -48,6 +51,7 @@ import pro.olli.models.User;
 import pro.olli.models.Verification;
 import pro.olli.queue.TaskQueueService;
 import pro.olli.repository.Factory;
+import pro.olli.repository.SyncRepository;
 import pro.olli.repository.UserRepository;
 import pro.olli.worker.SyncWorker;
 
@@ -65,6 +69,10 @@ public class TestResource {
     @Inject
     @Factory
     UserRepository userRepository;
+
+    @Inject
+    @Named("mongodb-sync") 
+    SyncRepository syncRepository;
 
     @Inject
     TaskQueueService taskQueueService;
@@ -85,7 +93,7 @@ public class TestResource {
     @Inject
     @AiConfiguredService
     QueryService queryService;
-    
+
     @Inject
     io.vertx.mutiny.core.Vertx vertx;
 
@@ -1080,35 +1088,35 @@ public class TestResource {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
     }
-    
+
     /**
      * Simple POJO to hold Ollama request data
      */
     public static class OllamaRequest {
         private String model;
         private String prompt;
-        
+
         public String getModel() { return model; }
         public void setModel(String model) { this.model = model; }
-        
+
         public String getPrompt() { return prompt; }
         public void setPrompt(String prompt) { this.prompt = prompt; }
     }
-    
+
     // NOTE: The direct-ollama and simple-ollama implementations below are for testing and debugging
     // For production code, use the DirectOllamaQueryService and DirectOllamaEmbeddingService classes
     // You can set the ollama.implementation=direct property to enable the direct implementation
-    
+
     /**
      * Model for embedding generation request
      */
     public static class EmbeddingRequest {
         private String text;
-        
+
         public String getText() { return text; }
         public void setText(String text) { this.text = text; }
     }
-    
+
     /**
      * Test endpoint for generating embeddings
      */
@@ -1117,15 +1125,15 @@ public class TestResource {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> generateEmbedding(EmbeddingRequest request) {
-        LOG.infof("Generating embedding for text: %s", 
+        LOG.infof("Generating embedding for text: %s",
             request.getText() != null ? request.getText().substring(0, Math.min(50, request.getText().length())) + "..." : "null");
-            
+
         if (request.getText() == null || request.getText().isEmpty()) {
             return Uni.createFrom().item(Response.status(400)
                 .entity(Map.of("error", "Text is required for embedding generation"))
                 .build());
         }
-        
+
         return embeddingService.generateEmbedding(request.getText())
             .map(embedding -> {
                 Map<String, Object> response = new HashMap<>();
@@ -1133,7 +1141,7 @@ public class TestResource {
                 response.put("embedding_preview", embedding.subList(0, Math.min(5, embedding.size())));
                 response.put("type", embeddingService.getClass().getName());
                 response.put("timestamp", System.currentTimeMillis());
-                
+
                 return Response.ok(response).build();
             })
             .onFailure().recoverWithItem(e -> {
@@ -1147,7 +1155,7 @@ public class TestResource {
                     .build();
             });
     }
-    
+
     /**
      * Simple JSON test endpoint that returns a hardcoded response
      * Used to debug JSON formatting issues
@@ -1157,17 +1165,17 @@ public class TestResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response testJson() {
         LOG.info("Testing JSON response");
-        
+
         Map<String, Object> response = new HashMap<>();
         response.put("model", "test-model");
         response.put("response", "This is a test response");
         response.put("created_at", System.currentTimeMillis());
         response.put("done", true);
         response.put("total_duration", 1234);
-        
+
         return Response.ok(response).build();
     }
-    
+
     /**
      * Simple string test endpoint that returns a hardcoded JSON string
      * Used to debug JSON formatting issues
@@ -1177,15 +1185,15 @@ public class TestResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response testJsonString() {
         LOG.info("Testing JSON string response");
-        
-        String jsonString = "{\"model\":\"test-model\",\"response\":\"This is a test response\",\"createdAt\":" 
+
+        String jsonString = "{\"model\":\"test-model\",\"response\":\"This is a test response\",\"createdAt\":"
             + System.currentTimeMillis() + ",\"done\":true,\"totalDuration\":1234}";
-        
+
         return Response.ok(jsonString)
             .type(MediaType.APPLICATION_JSON)
             .build();
     }
-    
+
     /**
      * Simplified direct Ollama API endpoint using WebClient
      * This implementation is non-blocking and should not cause blocked thread warnings
@@ -1196,10 +1204,10 @@ public class TestResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> simpleOllamaQuery(OllamaRequest request) {
         LOG.infof("Processing simple Ollama query with model %s", request.getModel());
-        
+
         String prompt = request.getPrompt();
         String model = request.getModel();
-        
+
         if (prompt == null || prompt.isEmpty()) {
             return Uni.createFrom().item(
                 Response.status(400)
@@ -1208,14 +1216,14 @@ public class TestResource {
                     .build()
             );
         }
-        
+
         if (model == null || model.isEmpty()) {
             model = ollamaModel; // Use default model if not specified
         }
-        
+
         // Use WebClient to make non-blocking request
         io.vertx.mutiny.ext.web.client.WebClient webClient = io.vertx.mutiny.ext.web.client.WebClient.create(vertx);
-        
+
         // Parse URL for host, port, path
         String urlString = ollamaEndpoint + "/api/generate";
         java.net.URI uri;
@@ -1230,51 +1238,51 @@ public class TestResource {
                     .build()
             );
         }
-        
+
         String host = uri.getHost();
         int port = uri.getPort();
         if (port == -1) {
             port = "https".equals(uri.getScheme()) ? 443 : 80;
         }
         String path = uri.getPath();
-        
+
         // Build request body
         io.vertx.core.json.JsonObject requestBody = new io.vertx.core.json.JsonObject()
             .put("model", model)
             .put("prompt", prompt)
             .put("stream", false);
-        
+
         final String finalModel = model;
-        
+
         return webClient.post(port, host, path)
             .timeout(30000) // 30 second timeout
             .putHeader("Content-Type", "application/json")
             .sendJsonObject(requestBody)
             .map(response -> {
                 LOG.infof("Received response from Ollama with status %d", response.statusCode());
-                
+
                 if (response.statusCode() == 200) {
                     // Parse successful response
                     io.vertx.core.json.JsonObject jsonResponse = response.bodyAsJsonObject();
                     String ollamaResponse = jsonResponse.getString("response");
-                    
+
                     // Create response object
                     io.vertx.core.json.JsonObject responseJson = new io.vertx.core.json.JsonObject()
                         .put("model", finalModel)
                         .put("response", ollamaResponse);
-                    
+
                     return Response.ok(responseJson.encode())
                         .type(MediaType.APPLICATION_JSON)
                         .build();
                 } else {
                     // Handle error
                     LOG.errorf("Ollama error response: %s", response.bodyAsString());
-                    
+
                     io.vertx.core.json.JsonObject errorJson = new io.vertx.core.json.JsonObject()
                         .put("error", "Ollama API error")
                         .put("status", response.statusCode())
                         .put("message", response.bodyAsString());
-                    
+
                     return Response.status(response.statusCode())
                         .entity(errorJson.encode())
                         .type(MediaType.APPLICATION_JSON)
@@ -1283,12 +1291,12 @@ public class TestResource {
             })
             .onFailure().recoverWithItem(error -> {
                 LOG.errorf("Error calling Ollama API: %s", error.getMessage(), error);
-                
+
                 io.vertx.core.json.JsonObject errorJson = new io.vertx.core.json.JsonObject()
                     .put("error", "Failed to communicate with Ollama")
                     .put("message", error.getMessage())
                     .put("type", error.getClass().getName());
-                
+
                 return Response.status(500)
                     .entity(errorJson.encode())
                     .type(MediaType.APPLICATION_JSON)
@@ -1306,10 +1314,10 @@ public class TestResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> directOllamaQuery(OllamaRequest request) {
         LOG.infof("Processing direct Ollama query with model %s", request.getModel());
-        
+
         String prompt = request.getPrompt();
         String model = request.getModel();
-        
+
         if (prompt == null || prompt.isEmpty()) {
             return Uni.createFrom().item(
                 Response.status(400)
@@ -1318,14 +1326,14 @@ public class TestResource {
                     .build()
             );
         }
-        
+
         if (model == null || model.isEmpty()) {
             model = ollamaModel; // Use default model if not specified
         }
-        
+
         // Use WebClient to make non-blocking request
         io.vertx.mutiny.ext.web.client.WebClient webClient = io.vertx.mutiny.ext.web.client.WebClient.create(vertx);
-        
+
         // Parse URL for host, port, path
         String urlString = ollamaEndpoint + "/api/generate";
         java.net.URI uri;
@@ -1340,49 +1348,49 @@ public class TestResource {
                     .build()
             );
         }
-        
+
         String host = uri.getHost();
         int port = uri.getPort();
         if (port == -1) {
             port = "https".equals(uri.getScheme()) ? 443 : 80;
         }
         String path = uri.getPath();
-        
+
         // Build request body
         io.vertx.core.json.JsonObject requestBody = new io.vertx.core.json.JsonObject()
             .put("model", model)
             .put("prompt", prompt)
             .put("stream", false);
-        
+
         final String finalModel = model;
-        
+
         return webClient.post(port, host, path)
             .timeout(60000) // 60 second timeout
             .putHeader("Content-Type", "application/json")
             .sendJsonObject(requestBody)
             .map(response -> {
                 LOG.infof("Received response from Ollama with status %d", response.statusCode());
-                
+
                 if (response.statusCode() == 200) {
                     // For the direct API, just pass through the response with minimal changes
                     io.vertx.core.json.JsonObject jsonResponse = response.bodyAsJsonObject();
-                    
+
                     // Add a couple extra fields but otherwise keep original response
                     jsonResponse.put("model", finalModel);
                     jsonResponse.put("query_time", System.currentTimeMillis());
-                    
+
                     return Response.ok(jsonResponse.encode())
                         .type(MediaType.APPLICATION_JSON)
                         .build();
                 } else {
                     // Handle error
                     LOG.errorf("Ollama error response: %s", response.bodyAsString());
-                    
+
                     io.vertx.core.json.JsonObject errorJson = new io.vertx.core.json.JsonObject()
                         .put("error", "Ollama API error")
                         .put("status", response.statusCode())
                         .put("message", response.bodyAsString());
-                    
+
                     return Response.status(response.statusCode())
                         .entity(errorJson.encode())
                         .type(MediaType.APPLICATION_JSON)
@@ -1391,12 +1399,12 @@ public class TestResource {
             })
             .onFailure().recoverWithItem(error -> {
                 LOG.errorf("Error calling Ollama API: %s", error.getMessage(), error);
-                
+
                 io.vertx.core.json.JsonObject errorJson = new io.vertx.core.json.JsonObject()
                     .put("error", "Failed to communicate with Ollama")
                     .put("message", error.getMessage())
                     .put("type", error.getClass().getName());
-                
+
                 return Response.status(500)
                     .entity(errorJson.encode())
                     .type(MediaType.APPLICATION_JSON)
@@ -1406,6 +1414,28 @@ public class TestResource {
 
     // --- Endpoints for E2E Integration Testing ---
 
+    /**
+     * Integration endpoint for document storage
+     */
+    @POST
+    @Path("/integration-store")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<Response> storeDocumentIntegration(DocumentRequest request) {
+        return storeDocument(request);
+    }
+    
+    /**
+     * Integration endpoint for RAG query
+     */
+    @POST
+    @Path("/integration-query")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<Response> queryIntegration(QueryRequest request) {
+        return query(request);
+    }
+    
     /**
      * Provides an auth token for E2E tests
      */
@@ -1593,5 +1623,159 @@ public class TestResource {
         response.put("sources", List.of("contract_acme.pdf"));
 
         return Response.ok(response).build();
+    }
+
+    /**
+     * Model for storing document for RAG testing
+     */
+    public static class DocumentRequest {
+        private String businessId;
+        private String userId;
+        private String filename;
+        private String content;
+
+        public String getBusinessId() { return businessId; }
+        public void setBusinessId(String businessId) { this.businessId = businessId; }
+
+        public String getUserId() { return userId; }
+        public void setUserId(String userId) { this.userId = userId; }
+
+        public String getFilename() { return filename; }
+        public void setFilename(String filename) { this.filename = filename; }
+
+        public String getContent() { return content; }
+        public void setContent(String content) { this.content = content; }
+    }
+
+    /**
+     * Store document for RAG testing
+     */
+    @POST
+    @Path("/store-document")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<Response> storeDocument(DocumentRequest request) {
+        LOG.infof("Storing document for RAG: %s", request.getFilename());
+
+        if (request.getContent() == null || request.getContent().trim().isEmpty()) {
+            return Uni.createFrom().item(Response.status(400)
+                .entity(Map.of("error", "Document content is required"))
+                .build());
+        }
+
+        if (request.getFilename() == null || request.getFilename().trim().isEmpty()) {
+            return Uni.createFrom().item(Response.status(400)
+                .entity(Map.of("error", "Filename is required"))
+                .build());
+        }
+
+        String businessId = request.getBusinessId() != null ?
+            request.getBusinessId() : "test-business";
+        String userId = request.getUserId() != null ?
+            request.getUserId() : "test-user";
+
+        // Check if we have direct access to an enhanced RAG service that can handle chunking
+        if (queryService instanceof pro.olli.ai.ollama.EnhancedRAGOllamaQueryService) {
+            LOG.info("Using EnhancedRAGOllamaQueryService for document storage");
+
+            pro.olli.ai.ollama.EnhancedRAGOllamaQueryService ragService =
+                (pro.olli.ai.ollama.EnhancedRAGOllamaQueryService) queryService;
+
+            return ragService.storeDocumentChunks(businessId, userId, request.getFilename(), request.getContent())
+                .map(v -> Response.ok(Map.of(
+                    "success", true,
+                    "message", "Document stored with enhanced RAG service",
+                    "businessId", businessId,
+                    "userId", userId,
+                    "filename", request.getFilename()
+                )).build())
+                .onFailure().recoverWithItem(e -> {
+                    LOG.errorf("Error storing document: %s", e.getMessage());
+                    return Response.serverError()
+                        .entity(Map.of("error", e.getMessage()))
+                        .build();
+                });
+        } else {
+            // Fallback to simple approach with no chunking - whole document
+            LOG.info("Using simple approach for document storage (no chunking)");
+
+            return embeddingService.generateEmbedding(request.getContent())
+                .flatMap(embedding -> {
+                    // Create a unique ID for this document
+                    String docId = "doc-" + System.currentTimeMillis();
+
+                    // Store the document and embedding in MongoDB
+                    return syncRepository.storeEmbedding(docId, businessId, userId,
+                            request.getContent(), embedding)
+                        .map(v -> Response.ok(Map.of(
+                            "success", true,
+                            "message", "Document stored with simple approach (whole document)",
+                            "businessId", businessId,
+                            "userId", userId,
+                            "filename", request.getFilename(),
+                            "embeddingLength", embedding.size()
+                        )).build());
+                })
+                .onFailure().recoverWithItem(e -> {
+                    LOG.errorf("Error storing document: %s", e.getMessage());
+                    return Response.serverError()
+                        .entity(Map.of("error", e.getMessage()))
+                        .build();
+                });
+        }
+    }
+
+    /**
+     * Model for query request
+     */
+    public static class QueryRequest {
+        private String prompt;
+        private List<ChatMessage> history;
+
+        public String getPrompt() { return prompt; }
+        public void setPrompt(String prompt) { this.prompt = prompt; }
+
+        public List<ChatMessage> getHistory() { return history; }
+        public void setHistory(List<ChatMessage> history) { this.history = history; }
+    }
+
+    /**
+     * Test endpoint for RAG query
+     */
+    @POST
+    @Path("/query")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<Response> query(QueryRequest request) {
+        LOG.infof("Processing RAG query: %s", request.getPrompt());
+
+        if (request.getPrompt() == null || request.getPrompt().trim().isEmpty()) {
+            return Uni.createFrom().item(Response.status(400)
+                .entity(Map.of("error", "Prompt is required"))
+                .build());
+        }
+
+        // Set the RAG system properties just in case
+        System.setProperty("ollama.rag.user_id", "test-user");
+        System.setProperty("ollama.rag.business_id", "test-business");
+
+        // Use the provided query service (whatever implementation is active)
+        return queryService.query(request.getPrompt(),
+                request.getHistory() != null ? request.getHistory() : List.of())
+            .map(response -> {
+                String serviceType = queryService.getClass().getSimpleName();
+
+                return Response.ok(Map.of(
+                    "response", response,
+                    "serviceType", serviceType,
+                    "prompt", request.getPrompt()
+                )).build();
+            })
+            .onFailure().recoverWithItem(e -> {
+                LOG.errorf("Error querying: %s", e.getMessage());
+                return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+            });
     }
 }

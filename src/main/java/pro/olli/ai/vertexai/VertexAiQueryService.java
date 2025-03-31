@@ -20,6 +20,8 @@ import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
 import java.time.temporal.ChronoUnit;
+import jakarta.inject.Inject;
+import pro.olli.ai.AiImplementationType;
 import pro.olli.ai.ChatMessage;
 import pro.olli.ai.QueryService;
 import pro.olli.core.metrics.Timed;
@@ -30,6 +32,7 @@ import java.util.List;
 
 import jakarta.enterprise.context.ApplicationScoped;
 
+@ApplicationScoped
 public class VertexAiQueryService implements QueryService {
 
     private static final Logger LOG = Logger.getLogger(VertexAiQueryService.class);
@@ -42,7 +45,11 @@ public class VertexAiQueryService implements QueryService {
     @ConfigProperty(name = "gcp.vertex.chat-model", defaultValue = "gemini-1.5-pro")
     String chatModel;
 
-    public VertexAiQueryService(String projectId, String location, String endpointId) {
+    @Inject
+    public VertexAiQueryService(
+            @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai") String projectId,
+            @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-west1") String location,
+            @ConfigProperty(name = "gcp.vertex.endpoint-id", defaultValue = "your-endpoint-id") String endpointId) {
         this.projectId = projectId;
         this.location = location;
         this.endpointId = endpointId;

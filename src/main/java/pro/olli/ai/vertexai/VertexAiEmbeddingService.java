@@ -30,7 +30,10 @@ import pro.olli.ai.EmbeddingService;
 import pro.olli.core.metrics.Timed;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import pro.olli.ai.AiConfiguredService;
+import pro.olli.ai.AiImplementationType;
 
+@ApplicationScoped
 public class VertexAiEmbeddingService implements EmbeddingService {
 
     private static final Logger LOG = Logger.getLogger(VertexAiEmbeddingService.class);
@@ -40,7 +43,11 @@ public class VertexAiEmbeddingService implements EmbeddingService {
     private final String location;
     private final String endpointId;
 
-    public VertexAiEmbeddingService(String projectId, String location, String endpointId) {
+    @Inject
+    public VertexAiEmbeddingService(
+            @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai") String projectId,
+            @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-west1") String location,
+            @ConfigProperty(name = "gcp.vertex.endpoint-id", defaultValue = "your-endpoint-id") String endpointId) {
         this.projectId = projectId;
         this.location = location;
         this.endpointId = endpointId;

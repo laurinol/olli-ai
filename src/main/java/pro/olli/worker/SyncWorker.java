@@ -41,6 +41,7 @@ import org.jboss.logging.Logger;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
 import pro.olli.ai.AiConfiguredService;
+import pro.olli.ai.AiImplementationType;
 import pro.olli.ai.EmbeddingService;
 import pro.olli.connector.Connector;
 import pro.olli.connector.ConnectorFactory;

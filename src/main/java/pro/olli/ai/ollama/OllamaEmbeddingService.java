@@ -42,7 +42,7 @@ public class OllamaEmbeddingService implements EmbeddingService {
         this.ollamaModel = ollamaModel;
         this.embeddingDimension = embeddingDimension;
 
-        LOG.infof("Created DirectOllamaEmbeddingService with model=%s, dimension=%d, endpoint=%s",
+        LOG.infof("Created OllamaEmbeddingService with model=%s, dimension=%d, endpoint=%s",
             ollamaModel, embeddingDimension, ollamaEndpoint);
     }
 
