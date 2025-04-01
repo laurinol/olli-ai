@@ -40,9 +40,6 @@ The Olli backend supports two different implementations for Ollama integration:
 The following properties control Ollama integration:
 
 ```properties
-# Enable Ollama as the AI provider (for development)
-%dev.ai.provider=ollama
-
 # Ollama server endpoint
 %dev.ollama.endpoint=http://localhost:11434
 

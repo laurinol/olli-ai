@@ -38,8 +38,8 @@ public class BillingJobScheduler {
 
     @Inject
     public BillingJobScheduler(
-            @Factory UserRepository userRepository,
-            @Factory BillingRepository billingRepository,
+            UserRepository userRepository,
+            BillingRepository billingRepository,
             PaymentProviderFactory paymentProviderFactory,
             @ConfigProperty(name = "billing.enabled", defaultValue = "false") boolean billingEnabled) {
         this.userRepository = userRepository;
@@ -71,13 +71,13 @@ public class BillingJobScheduler {
     private void processDuePayments() {
         // Get today's date at midnight
         Instant today = Instant.now().truncatedTo(ChronoUnit.DAYS);
-        
+
         // Query businesses with next billing date on or before today
         userRepository.getBusinessesDueForBilling(today)
             .subscribe().with(
                 businesses -> {
                     LOG.infof("Processing payments for %d businesses due for billing", businesses.size());
-                    
+
                     for (Business business : businesses) {
                         try {
                             processBusiness(business);
@@ -96,26 +96,26 @@ public class BillingJobScheduler {
      */
     private void processBusiness(Business business) {
         LOG.infof("Processing billing for business: %s (%s)", business.getName(), business.getId());
-        
+
         // Skip if subscription is not active
         if (!business.isSubscriptionActive()) {
             LOG.infof("Skipping business %s as subscription is not active: %s",
                     business.getId(), business.getSubscriptionStatus());
             return;
         }
-        
+
         // Skip if no payment method is set
         if (business.getPaymentMethodId() == null) {
             LOG.warnf("Business %s has no payment method set", business.getId());
             return;
         }
-        
+
         // Get the payment provider
         PaymentProvider paymentProvider = paymentProviderFactory.getPaymentProvider();
-        
+
         // Get subscription ID from metadata
         String subscriptionId = getSubscriptionId(business);
-        
+
         // Process the payment
         if (subscriptionId != null) {
             paymentProvider.processRecurringPayment(business, subscriptionId)
@@ -123,7 +123,7 @@ public class BillingJobScheduler {
                     transaction -> {
                         LOG.infof("Successfully processed payment for business %s: $%.2f",
                                 business.getId(), transaction.getAmountInDollars());
-                        
+
                         // Reset usage metrics for the business
                         resetUsageMetrics(business);
                     },
@@ -140,10 +140,10 @@ public class BillingJobScheduler {
      */
     private void resetUsageMetrics(Business business) {
         LOG.infof("Resetting usage metrics for business: %s", business.getId());
-        
+
         // Calculate next billing date (1 month from now)
         Instant nextBillingDate = Instant.now().plus(30, ChronoUnit.DAYS);
-        
+
         // Create updated business with reset metrics
         Business updatedBusiness = new Business(
                 business.getId(),
@@ -161,7 +161,7 @@ public class BillingJobScheduler {
                 0, // Reset documents processed
                 0  // Reset queries
         );
-        
+
         // Save updated business
         userRepository.saveBusiness(updatedBusiness)
             .subscribe().with(
@@ -179,7 +179,7 @@ public class BillingJobScheduler {
         if (business.getMetadata() == null) {
             return null;
         }
-        
+
         Object subscriptionId = business.getMetadata().get("stripeSubscriptionId");
         return subscriptionId != null ? subscriptionId.toString() : null;
     }
@@ -196,15 +196,15 @@ public class BillingJobScheduler {
         }
 
         LOG.info("Running job to retry failed payments");
-        
+
         // Get recent failed transactions
         Instant cutoff = Instant.now().minus(3, ChronoUnit.DAYS);
-        
+
         billingRepository.getFailedPayments(cutoff)
             .subscribe().with(
                 transactions -> {
                     LOG.infof("Processing %d failed payments for retry", transactions.size());
-                    
+
                     for (BillingTransaction transaction : transactions) {
                         try {
                             retryFailedPayment(transaction);
@@ -224,7 +224,7 @@ public class BillingJobScheduler {
     private void retryFailedPayment(BillingTransaction transaction) {
         LOG.infof("Retrying failed payment: %s for business: %s ($%.2f)",
                 transaction.getId(), transaction.getBusinessId(), transaction.getAmountInDollars());
-        
+
         // Get the business
         userRepository.getBusiness(transaction.getBusinessId())
             .subscribe().with(
@@ -233,23 +233,23 @@ public class BillingJobScheduler {
                         LOG.warnf("Business %s not found for retry payment", transaction.getBusinessId());
                         return;
                     }
-                    
+
                     Business business = businessOpt.get();
-                    
+
                     // Skip if no payment method
                     if (business.getPaymentMethodId() == null) {
                         LOG.warnf("Business %s has no payment method for retry payment", business.getId());
                         return;
                     }
-                    
+
                     // Get the payment provider
                     PaymentProvider paymentProvider = paymentProviderFactory.getPaymentProvider();
-                    
+
                     // Create retry metadata
                     Map<String, Object> metadata = new HashMap<>();
                     metadata.put("isRetry", true);
                     metadata.put("originalTransactionId", transaction.getId());
-                    
+
                     // Process the payment
                     paymentProvider.processPayment(
                             business,
@@ -261,7 +261,7 @@ public class BillingJobScheduler {
                         newTransaction -> {
                             LOG.infof("Successfully retried payment for business %s: $%.2f",
                                     business.getId(), newTransaction.getAmountInDollars());
-                            
+
                             // Update the original transaction to reference the successful retry
                             updateRetryReference(transaction, newTransaction);
                         },
@@ -278,12 +278,12 @@ public class BillingJobScheduler {
      */
     private void updateRetryReference(BillingTransaction original, BillingTransaction retry) {
         // Add metadata to the original transaction referencing the successful retry
-        Map<String, Object> updatedMetadata = original.getMetadata() != null 
-                ? new HashMap<>(original.getMetadata()) 
+        Map<String, Object> updatedMetadata = original.getMetadata() != null
+                ? new HashMap<>(original.getMetadata())
                 : new HashMap<>();
         updatedMetadata.put("retriedWith", retry.getId());
         updatedMetadata.put("retrySuccessful", true);
-        
+
         // Create updated transaction
         BillingTransaction updatedTransaction = new BillingTransaction(
                 original.getId(),
@@ -297,7 +297,7 @@ public class BillingJobScheduler {
                 original.getCreatedAt(),
                 updatedMetadata
         );
-        
+
         // Save updated transaction
         billingRepository.updateTransaction(updatedTransaction)
             .subscribe().with(

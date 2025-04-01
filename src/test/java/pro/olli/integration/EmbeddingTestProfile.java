@@ -25,7 +25,6 @@ public class EmbeddingTestProfile implements QuarkusTestProfile {
         config.put("quarkus.mongodb.database", "olli_test");
 
         // AI provider configuration - use Ollama for embeddings and queries
-        config.put("ai.provider", "ollama");
         config.put("ollama.endpoint", "http://localhost:11434");
         config.put("ollama.embedding-model", "nomic-embed-text");
         config.put("ollama.query-model", "tinyllama");

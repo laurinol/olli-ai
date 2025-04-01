@@ -20,7 +20,7 @@ import org.jboss.logging.Logger;
 import pro.olli.ai.ChatMessage;
 import pro.olli.ai.EmbeddingService;
 import pro.olli.ai.QueryService;
-import pro.olli.ai.tokenizer.SimpleTokenizer;
+import pro.olli.ai.tokenizer.BytePairEncodingTokenizer;
 import pro.olli.ai.utils.TextChunker;
 import pro.olli.core.metrics.Timed;
 import pro.olli.core.resilience.exception.AppException;
@@ -46,7 +46,7 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
     private final String ollamaModel;
     private final EmbeddingService embeddingService;
     private final SyncRepository syncRepository;
-    
+
     // Configuration for RAG
     private final int maxContextTokens;
     private final int maxRelevantChunks;
@@ -60,7 +60,7 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
             @ConfigProperty(name = "ollama.rag.max-context-tokens", defaultValue = "2048") int maxContextTokens,
             @ConfigProperty(name = "ollama.rag.max-chunks", defaultValue = "5") int maxRelevantChunks,
             @ConfigProperty(name = "ollama.rag.chunking-strategy", defaultValue = "SENTENCE") String chunkingStrategyName,
-            @AiConfiguredService EmbeddingService embeddingService, 
+            @AiConfiguredService EmbeddingService embeddingService,
             @Named("mongodb-sync") SyncRepository syncRepository) {
         this.vertx = vertx;
         this.ollamaEndpoint = ollamaEndpoint;
@@ -69,7 +69,7 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
         this.syncRepository = syncRepository;
         this.maxContextTokens = maxContextTokens;
         this.maxRelevantChunks = maxRelevantChunks;
-        
+
         // Parse chunking strategy from configuration
         TextChunker.ChunkingStrategy parsedStrategy;
         try {
@@ -110,13 +110,13 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
                     AppException.ErrorType.VALIDATION_ERROR));
         }
 
-        // Get business ID and user ID from system properties 
+        // TODO: Get business ID and user ID from system properties
         // (in a real system this should come from the authentication context)
         String userId = System.getProperty("ollama.rag.user_id", "test-user");
         String businessId = System.getProperty("ollama.rag.business_id", "test-business");
-        
+
         LOG.infof("Enhanced RAG query using businessId=%s, userId=%s", businessId, userId);
-        
+
         // Generate embedding for the query
         return embeddingService.generateEmbedding(prompt)
             .flatMap(queryEmbedding -> {
@@ -129,7 +129,7 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
     /**
      * Find relevant context for the query by searching for similar document chunks
      */
-    private Uni<String> findRelevantContext(String businessId, String userId, 
+    private Uni<String> findRelevantContext(String businessId, String userId,
                                           List<Float> queryEmbedding, String prompt) {
         // Search for similar documents
         return syncRepository.findSimilarDocuments(businessId, userId, queryEmbedding, maxRelevantChunks)
@@ -138,24 +138,24 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
                     LOG.info("No similar documents found for query");
                     return "";
                 }
-                
+
                 LOG.infof("Found %d similar documents for query", similarDocuments.size());
-                
+
                 // Format the documents as context
                 String context = "Based on your documents, here is relevant information:\n\n";
-                
+
                 for (int i = 0; i < similarDocuments.size(); i++) {
                     String doc = similarDocuments.get(i);
                     context += "Document " + (i + 1) + ": " + doc + "\n\n";
                 }
-                
+
                 // Truncate context if it's too long
-                if (SimpleTokenizer.estimateTokenCount(context) > maxContextTokens) {
-                    LOG.infof("Context too long (%d tokens), truncating", 
-                        SimpleTokenizer.estimateTokenCount(context));
-                    context = SimpleTokenizer.truncateToTokenLimit(context, maxContextTokens);
+                if (BytePairEncodingTokenizer.getTokenCount(context) > maxContextTokens) {
+                    LOG.infof("Context too long (%d tokens), truncating",
+                        BytePairEncodingTokenizer.getTokenCount(context));
+                    context = BytePairEncodingTokenizer.truncateText(context, maxContextTokens);
                 }
-                
+
                 return context;
             });
     }
@@ -187,13 +187,13 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
 
         // Build the message array with history
         String systemPrompt = "You are a helpful AI assistant. ";
-        
+
         // Add context if available
         if (context != null && !context.isEmpty()) {
             systemPrompt += "When answering, use ONLY the following information:\n\n" + context;
             systemPrompt += "\n\nIf the information provided doesn't answer the question, say you don't know rather than making up information.";
         }
-        
+
         StringBuilder fullPrompt = new StringBuilder(systemPrompt);
 
         // Add chat history
@@ -222,10 +222,10 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
             .put("stream", false);
 
         LOG.infof("Sending Enhanced RAG query with total prompt length: %d", fullPrompt.length());
-        
+
         if (!context.isEmpty()) {
-            LOG.infof("RAG context length: %d characters, ~%d tokens", 
-                context.length(), SimpleTokenizer.estimateTokenCount(context));
+            LOG.infof("RAG context length: %d characters, ~%d tokens",
+                context.length(), BytePairEncodingTokenizer.getTokenCount(context));
         }
 
         return webClient.post(port, host, path)
@@ -276,19 +276,19 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
         if (document == null || document.trim().isEmpty()) {
             return new ArrayList<>();
         }
-        
+
         // Chunk the document
-        List<String> chunks = TextChunker.chunkText(document, chunkingStrategy, 
-                                                  TextChunker.DEFAULT_CHUNK_SIZE, 
+        List<String> chunks = TextChunker.chunkText(document, chunkingStrategy,
+                                                  TextChunker.DEFAULT_CHUNK_SIZE,
                                                   TextChunker.DEFAULT_CHUNK_OVERLAP);
-        
-        LOG.infof("Chunked document '%s' into %d chunks using strategy %s", 
+
+        LOG.infof("Chunked document '%s' into %d chunks using strategy %s",
             filename, chunks.size(), chunkingStrategy);
-        
+
         // Add metadata to chunks
         return TextChunker.addMetadataToChunks(chunks, filename, null);
     }
-    
+
     /**
      * Store document chunks and their embeddings
      * @param businessId The business ID
@@ -300,31 +300,31 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
     public Uni<Void> storeDocumentChunks(String businessId, String userId, String filename, String documentText) {
         // Process document into chunks
         List<String> chunks = processDocumentIntoChunks(documentText, filename);
-        
+
         if (chunks.isEmpty()) {
             LOG.infof("No chunks generated for document: %s", filename);
             return Uni.createFrom().voidItem();
         }
-        
+
         LOG.infof("Storing %d chunks for document: %s", chunks.size(), filename);
-        
+
         // Process each chunk
         List<Uni<Void>> storeOperations = new ArrayList<>();
-        
+
         for (int i = 0; i < chunks.size(); i++) {
             String chunk = chunks.get(i);
             String chunkId = filename + "-chunk-" + i;
-            
+
             // Generate embedding for the chunk
             Uni<Void> storeOp = embeddingService.generateEmbedding(chunk)
-                .flatMap(embedding -> 
+                .flatMap(embedding ->
                     // Store the embedding
                     syncRepository.storeEmbedding(chunkId, businessId, userId, chunk, embedding)
                 );
-            
+
             storeOperations.add(storeOp);
         }
-        
+
         // Combine all operations
         return Uni.combine().all().unis(storeOperations)
             .discardItems();

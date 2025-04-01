@@ -9,15 +9,14 @@ import com.google.cloud.firestore.Firestore;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Named;
 import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
-
-import java.util.Map;
 import pro.olli.core.resilience.exception.AppException;
 import pro.olli.models.SyncHistoryEntry;
 import pro.olli.repository.SyncRepository;
@@ -72,21 +71,22 @@ public class FirestoreSyncRepository implements SyncRepository {
                 LOG.debugf("Successfully updated sync history for business: %s, user: %s", businessId, userId);
                 return (Void) null;
             })
-            .onFailure().invoke(e -> LOG.warnf("Failed to update sync history, will attempt to create document: %s", e.getMessage()))
+            .onFailure().invoke(
+                e -> LOG.warnf("Failed to update sync history, will attempt to create document: %s", e.getMessage()))
             .onFailure().recoverWithUni(() ->
                 Uni.createFrom().future(
-                    firestore.collection("clients").document(businessId)
-                        .collection("users").document(userId)
-                        .set(Map.of("syncHistory", java.util.Collections.singletonList(historyEntry)))
-                ).map(ignored -> {
-                    LOG.infof("Created new sync history document for business: %s, user: %s", businessId, userId);
-                    return (Void) null;
-                })
-                .onFailure().transform(e -> {
-                    LOG.errorf("Failed to create sync history: %s", e.getMessage());
-                    return new AppException("Failed to append sync history", e,
-                        AppException.ErrorType.DATA_ACCESS_ERROR);
-                })
+                        firestore.collection("clients").document(businessId)
+                            .collection("users").document(userId)
+                            .set(Map.of("syncHistory", java.util.Collections.singletonList(historyEntry)))
+                    ).map(ignored -> {
+                        LOG.infof("Created new sync history document for business: %s, user: %s", businessId, userId);
+                        return (Void) null;
+                    })
+                    .onFailure().transform(e -> {
+                        LOG.errorf("Failed to create sync history: %s", e.getMessage());
+                        return new AppException("Failed to append sync history", e,
+                            AppException.ErrorType.DATA_ACCESS_ERROR);
+                    })
             );
     }
 }

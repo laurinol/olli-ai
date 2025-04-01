@@ -4,35 +4,19 @@
 package pro.olli.ai.onnx;
 
 import ai.djl.huggingface.tokenizers.HuggingFaceTokenizer;
+import ai.djl.inference.Predictor;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
-import ai.djl.ndarray.types.Shape;
-import ai.djl.onnxruntime.engine.OrtEngine;
-import ai.djl.inference.Predictor;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ZooModel;
 import ai.djl.translate.Translator;
 import ai.djl.translate.TranslatorContext;
-import ai.djl.Model;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
-import pro.olli.ai.AiConfiguredService;
-import pro.olli.ai.AiImplementationType;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
-import org.eclipse.microprofile.faulttolerance.Fallback;
-import org.eclipse.microprofile.faulttolerance.Retry;
-import org.eclipse.microprofile.faulttolerance.Timeout;
-import org.jboss.logging.Logger;
-import pro.olli.ai.EmbeddingService;
-import pro.olli.ai.tokenizer.SimpleTokenizer;
-import pro.olli.ai.utils.TextChunker;
-import pro.olli.core.metrics.Timed;
-import pro.olli.core.resilience.exception.AppException;
-
+import jakarta.inject.Inject;
 import java.io.File;
 import java.nio.file.Paths;
 import java.time.temporal.ChronoUnit;
@@ -41,7 +25,18 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
+import org.eclipse.microprofile.faulttolerance.Fallback;
+import org.eclipse.microprofile.faulttolerance.Retry;
+import org.eclipse.microprofile.faulttolerance.Timeout;
+import org.jboss.logging.Logger;
+import pro.olli.ai.EmbeddingService;
+import pro.olli.ai.tokenizer.BytePairEncodingTokenizer;
+import pro.olli.ai.utils.TextChunker;
+import pro.olli.config.AppConfig;
+import pro.olli.core.metrics.Timed;
+import pro.olli.core.resilience.exception.AppException;
 
 /**
  * Implementation of EmbeddingService that uses ONNX Runtime with DJL for local embedding generation.
@@ -51,76 +46,64 @@ import java.util.stream.Collectors;
 public class OnnxEmbeddingService implements EmbeddingService {
 
     private static final Logger LOG = Logger.getLogger(OnnxEmbeddingService.class);
-    
+
+    private final AppConfig config;
+
     // Model and tokenizer
     private ZooModel<String, float[]> model;
     private HuggingFaceTokenizer tokenizer;
-    
+
     // Flag to track initialization status
     private final AtomicBoolean initialized = new AtomicBoolean(false);
-    
-    // Configuration properties
-    @ConfigProperty(name = "onnx.model.path", defaultValue = "models/all-MiniLM-L6-v2.onnx")
-    String modelPath;
-    
-    @ConfigProperty(name = "onnx.tokenizer.path", defaultValue = "models/tokenizer.json")
-    String tokenizerPath;
-    
-    @ConfigProperty(name = "onnx.embedding.dimension", defaultValue = "384")
-    int embeddingDimension;
-    
-    @ConfigProperty(name = "onnx.max.sequence.length", defaultValue = "128")
-    int maxSequenceLength;
-    
-    @ConfigProperty(name = "onnx.enabled", defaultValue = "false")
-    boolean onnxEnabled;
 
     /**
      * Constructor with default configuration
      */
-    public OnnxEmbeddingService() {
+    @Inject
+    public OnnxEmbeddingService(AppConfig config) {
         LOG.info("Creating ONNX Embedding Service");
+        this.config = config;
     }
-    
+
     /**
      * Initialize the ONNX Runtime and tokenizer
      */
     @PostConstruct
     public void initialize() {
-        if (!onnxEnabled) {
+        if (!config.isOnnxEnabled()) {
             LOG.info("ONNX embedding service is disabled, will use fallback method");
             return;
         }
-        
+
         try {
             // Check if model file exists
-            File modelFile = new File(modelPath);
+            File modelFile = new File(config.getOnnxModelPath());
             if (!modelFile.exists()) {
-                LOG.errorf("Model file not found at: %s", modelPath);
+                LOG.errorf("Model file not found at: %s", config.getOnnxModelPath());
                 return;
             }
-            
+
             // Check if tokenizer file exists
-            File tokenizerFile = new File(tokenizerPath);
+            File tokenizerFile = new File(config.getOnnxTokenizerPath());
             if (!tokenizerFile.exists()) {
-                LOG.errorf("Tokenizer file not found at: %s", tokenizerPath);
+                LOG.errorf("Tokenizer file not found at: %s", config.getOnnxTokenizerPath());
                 return;
             }
-            
+
             // Create the model using DJL
             Criteria<String, float[]> criteria = Criteria.builder()
                 .setTypes(String.class, float[].class)
-                .optModelPath(Paths.get(modelPath))
+                .optModelPath(Paths.get(config.getOnnxModelPath()))
                 .optEngine("OnnxRuntime")
-                .optTranslator(new BertEmbeddingTranslator(maxSequenceLength))
+                .optTranslator(new BertEmbeddingTranslator(config.getOnnxMaxSequenceLength()))
                 .build();
-            
+
             model = criteria.loadModel();
-            
+
             // Load tokenizer
-            LOG.infof("Loading tokenizer from: %s", tokenizerPath);
-            tokenizer = HuggingFaceTokenizer.newInstance(tokenizerPath);
-            
+            LOG.infof("Loading tokenizer from: %s", config.getOnnxTokenizerPath());
+            tokenizer = HuggingFaceTokenizer.newInstance(config.getOnnxTokenizerPath());
+
             // Mark as initialized
             initialized.set(true);
             LOG.info("ONNX embedding service initialized successfully");
@@ -128,7 +111,7 @@ public class OnnxEmbeddingService implements EmbeddingService {
             LOG.errorf("Failed to initialize ONNX embedding service: %s", e.getMessage());
         }
     }
-    
+
     /**
      * Clean up resources when the bean is destroyed
      */
@@ -142,7 +125,7 @@ public class OnnxEmbeddingService implements EmbeddingService {
                 LOG.error("Error closing ONNX model", e);
             }
         }
-        
+
         if (tokenizer != null) {
             try {
                 tokenizer.close();
@@ -169,26 +152,26 @@ public class OnnxEmbeddingService implements EmbeddingService {
     @Fallback(fallbackMethod = "fallbackEmbedding")
     public Uni<List<Float>> generateEmbedding(final String text) {
         LOG.infof("Generating embedding with ONNX Runtime");
-        
+
         if (text == null || text.trim().isEmpty()) {
             LOG.warn("Empty text provided for embedding generation");
             return Uni.createFrom().failure(
                 new AppException("Empty text provided for embedding generation",
                     AppException.ErrorType.VALIDATION_ERROR));
         }
-        
+
         // If not initialized or disabled, use fallback
-        if (!initialized.get() || !onnxEnabled) {
+        if (!initialized.get() || !config.isOnnxEnabled()) {
             LOG.warn("ONNX embedding service not initialized, using fallback");
             return Uni.createFrom().item(() -> generateFallbackEmbedding(text));
         }
-        
+
         // If text is too long, chunk it and use the first chunk
         final String processedText;
-        if (text.length() > maxSequenceLength * 10) {
+        if (text.length() > config.getOnnxMaxSequenceLength() * 10) {
             LOG.infof("Text too long (%d chars), chunking and using first chunk", text.length());
-            List<String> chunks = TextChunker.chunkText(text, TextChunker.ChunkingStrategy.SENTENCE, 
-                                                      maxSequenceLength * 10, 0);
+            List<String> chunks = TextChunker.chunkText(text, TextChunker.ChunkingStrategy.SENTENCE,
+                config.getOnnxMaxSequenceLength() * 10, 0);
             if (!chunks.isEmpty()) {
                 processedText = chunks.get(0);
                 LOG.infof("Using first chunk of %d chars", processedText.length());
@@ -198,20 +181,20 @@ public class OnnxEmbeddingService implements EmbeddingService {
         } else {
             processedText = text;
         }
-        
+
         // Use non-blocking pattern with Uni
         return Uni.createFrom().emitter(emitter -> {
             try {
                 // Generate embeddings with the model
                 Predictor<String, float[]> predictor = model.newPredictor();
                 float[] embedding = predictor.predict(processedText);
-                
+
                 // Convert to list of Float
                 List<Float> embeddingList = new ArrayList<>(embedding.length);
                 for (float v : embedding) {
                     embeddingList.add(v);
                 }
-                
+
                 LOG.infof("Generated ONNX embedding, length: %d", embeddingList.size());
                 emitter.complete(embeddingList);
             } catch (Exception e) {
@@ -221,7 +204,7 @@ public class OnnxEmbeddingService implements EmbeddingService {
             }
         });
     }
-    
+
     /**
      * Fallback method for embedding generation
      */
@@ -229,7 +212,7 @@ public class OnnxEmbeddingService implements EmbeddingService {
         LOG.warnf("Using fallback embedding generation for text of length: %d", text.length());
         return Uni.createFrom().item(() -> generateFallbackEmbedding(text));
     }
-    
+
     /**
      * Generate a fallback embedding using a deterministic random approach
      */
@@ -239,8 +222,8 @@ public class OnnxEmbeddingService implements EmbeddingService {
         Random random = new Random(seed);
 
         // Generate a simplified embedding vector
-        List<Float> embedding = new ArrayList<>(embeddingDimension);
-        for (int i = 0; i < embeddingDimension; i++) {
+        List<Float> embedding = new ArrayList<>(config.getOnnxEmbeddingDimension());
+        for (int i = 0; i < config.getOnnxEmbeddingDimension(); i++) {
             embedding.add((random.nextFloat() * 2) - 1); // Value between -1 and 1
         }
 
@@ -251,82 +234,104 @@ public class OnnxEmbeddingService implements EmbeddingService {
         }
         float norm = (float) Math.sqrt(sum);
 
-        for (int i = 0; i < embeddingDimension; i++) {
+        for (int i = 0; i < config.getOnnxEmbeddingDimension(); i++) {
             embedding.set(i, embedding.get(i) / norm);
         }
 
         LOG.infof("Generated fallback embedding, length: %d", embedding.size());
         return embedding;
     }
-    
+
     /**
      * Check if the service is initialized and ready
      */
     public boolean isReady() {
-        return initialized.get() && onnxEnabled;
+        return initialized.get() && config.isOnnxEnabled();
     }
-    
+
     /**
      * Custom translator for BERT embedding models
      */
     private class BertEmbeddingTranslator implements Translator<String, float[]> {
-        
+
         private final int maxLength;
-        
+
         public BertEmbeddingTranslator(int maxLength) {
             this.maxLength = maxLength;
         }
-        
+
         @Override
         public float[] processOutput(TranslatorContext ctx, NDList list) {
             // The model outputs embeddings as a tensor
             NDArray embedding = list.get(0);
-            
+
             // Get the mean of the token embeddings (CLS token)
             // For sentence-BERT models, we usually use the CLS token or the mean
             return embedding.toFloatArray();
         }
-        
+
         @Override
         public NDList processInput(TranslatorContext ctx, String input) {
             NDManager manager = ctx.getNDManager();
-            
+
             try {
                 // Tokenize input
                 long[] tokenIds;
                 long[] attentionMask;
-                
+
                 if (tokenizer != null) {
                     // Use HuggingFace tokenizer
                     ai.djl.huggingface.tokenizers.Encoding encoding = tokenizer.encode(input);
                     tokenIds = encoding.getIds();
                     attentionMask = encoding.getAttentionMask();
-                    
+
                     // Truncate if too long
                     if (tokenIds.length > maxLength) {
                         tokenIds = Arrays.copyOf(tokenIds, maxLength);
                         attentionMask = Arrays.copyOf(attentionMask, maxLength);
                     }
                 } else {
-                    // Fallback to simple tokenization
-                    List<String> tokens = SimpleTokenizer.tokenize(input);
-                    int tokenCount = Math.min(tokens.size(), maxLength);
-                    
-                    tokenIds = new long[tokenCount];
-                    for (int i = 0; i < tokenCount; i++) {
-                        // Convert token string to hash code (not a proper tokenizer)
-                        tokenIds[i] = Math.abs(tokens.get(i).hashCode() % 10000);
+                    // Use BytePairEncodingTokenizer as fallback
+                    LOG.info("HuggingFaceTokenizer not available, using BytePairEncodingTokenizer");
+
+                    // Get token IDs directly
+                    tokenIds = BytePairEncodingTokenizer.getInstance().getTokenIds(input);
+
+                    // Truncate if too long
+                    if (tokenIds.length > maxLength) {
+                        tokenIds = Arrays.copyOf(tokenIds, maxLength);
                     }
-                    
+
                     // Create attention mask
-                    attentionMask = new long[tokenCount];
-                    Arrays.fill(attentionMask, 1L);
+                    attentionMask = BytePairEncodingTokenizer.getInstance().getAttentionMask(input);
+                    if (attentionMask.length > maxLength) {
+                        attentionMask = Arrays.copyOf(attentionMask, maxLength);
+                    }
+
+                    // If BytePairEncodingTokenizer also failed, resort to very simple fallback
+                    if (tokenIds.length == 0) {
+                        LOG.warn("BytePairEncodingTokenizer failed, using simple fallback");
+
+                        // Simple whitespace tokenization
+                        String[] words = input.split("\\s+");
+                        int tokenCount = Math.min(words.length, maxLength);
+
+                        tokenIds = new long[tokenCount];
+                        for (int i = 0; i < tokenCount; i++) {
+                            // Convert words to hash code (not a proper tokenizer)
+                            tokenIds[i] = Math.abs(words[i].hashCode() % 10000);
+                        }
+
+                        // Create attention mask
+                        attentionMask = new long[tokenCount];
+                        Arrays.fill(attentionMask, 1L);
+                    }
                 }
-                
+
                 // Create NDArrays for input IDs and attention mask
                 NDArray inputIdsArray = manager.create(tokenIds).expandDims(0);
                 NDArray attentionMaskArray = manager.create(attentionMask).expandDims(0);
-                
+
                 return new NDList(inputIdsArray, attentionMaskArray);
             } catch (Exception e) {
                 LOG.errorf("Error in tokenization: %s", e.getMessage());

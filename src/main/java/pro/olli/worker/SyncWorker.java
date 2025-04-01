@@ -31,7 +31,6 @@ import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
 import org.apache.tika.sax.BodyContentHandler;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.faulttolerance.Bulkhead;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Fallback;
@@ -41,8 +40,8 @@ import org.jboss.logging.Logger;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
 import pro.olli.ai.AiConfiguredService;
-import pro.olli.ai.AiImplementationType;
 import pro.olli.ai.EmbeddingService;
+import pro.olli.config.AppConfig;
 import pro.olli.connector.Connector;
 import pro.olli.connector.ConnectorFactory;
 import pro.olli.core.resilience.exception.AppException;
@@ -57,24 +56,7 @@ public class SyncWorker {
 
     private static final Logger LOG = Logger.getLogger(SyncWorker.class);
 
-    @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai")
-    String projectId;
-
-    @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-west1")
-    String location;
-
-    @ConfigProperty(name = "worker.backoff.initial-ms", defaultValue = "1000")
-    long initialBackoffMs;
-
-    @ConfigProperty(name = "worker.backoff.max-ms", defaultValue = "60000")
-    long maxBackoffMs;
-
-    @ConfigProperty(name = "worker.backoff.multiplier", defaultValue = "1.5")
-    double backoffMultiplier;
-
-    @ConfigProperty(name = "app.worker.multiplier", defaultValue = "4")
-    int workerMultiplier;
-
+    private final AppConfig config;
     private final ConnectorFactory connectorFactory;
     private final EmbeddingService embeddingService;
     private final TaskQueueService taskQueueService;
@@ -82,16 +64,17 @@ public class SyncWorker {
     private final IndexServiceClient indexServiceClient;
     private final ExecutorService executorService;
     private final Gson gson;
-    private final int workerCount = Math.max(1, Runtime.getRuntime().availableProcessors() * workerMultiplier);
+    private final int workerCount;
     private final SyncRepository syncRepository;
 
     @Inject
-    public SyncWorker(ConnectorFactory connectorFactory,
+    public SyncWorker(AppConfig config, ConnectorFactory connectorFactory,
         @AiConfiguredService EmbeddingService embeddingService,
         TaskQueueService taskQueueService,
         BillingService billingService,
         IndexServiceClient indexServiceClient,
         @Named("mongodb-sync") SyncRepository syncRepository) {
+        this.config = config;
         this.connectorFactory = connectorFactory;
         this.embeddingService = embeddingService;
         this.taskQueueService = taskQueueService;
@@ -99,6 +82,8 @@ public class SyncWorker {
         this.indexServiceClient = indexServiceClient;
         this.syncRepository = syncRepository;
         this.gson = new Gson();
+        this.workerCount = Math.max(1,
+            Runtime.getRuntime().availableProcessors() * config.getWorkerMultiplier());
         this.executorService = Executors.newFixedThreadPool(
             workerCount,
             new ThreadFactoryBuilder().setNameFormat("sync-worker-%d").build()
@@ -127,10 +112,10 @@ public class SyncWorker {
 
     private void consumeTasks() {
         LOG.infof("Worker thread starting with backoff parameters: initial=%dms, max=%dms, multiplier=%.2f",
-            initialBackoffMs, maxBackoffMs, backoffMultiplier);
+            config.getWorkerBackoffInitialMs(), config.getWorkerBackoffMaxMs(), config.getWorkerBackoffMultiplier());
 
         // Use thread-local atomics for counters that need to be modified in lambda expressions
-        final AtomicLong currentBackoff = new AtomicLong(initialBackoffMs);
+        final AtomicLong currentBackoff = new AtomicLong(config.getWorkerBackoffInitialMs());
         final AtomicInteger emptyPollCount = new AtomicInteger(0);
         final AtomicLong lastLogTimestamp = new AtomicLong(0);
 
@@ -141,7 +126,7 @@ public class SyncWorker {
                 .subscribe().with(
                     dequeuedTask -> {
                         // Reset backoff on successful task retrieval
-                        currentBackoff.set(initialBackoffMs);
+                        currentBackoff.set(config.getWorkerBackoffInitialMs());
                         emptyPollCount.set(0);
 
                         // Process the task
@@ -171,7 +156,8 @@ public class SyncWorker {
                         try {
                             Thread.sleep(backoffTime);
                             // Increase backoff time for next iteration (capped at max)
-                            long newBackoff = Math.min(maxBackoffMs, (long) (backoffTime * backoffMultiplier));
+                            long newBackoff = Math.min(config.getWorkerBackoffInitialMs(),
+                                (long) (backoffTime * config.getWorkerMultiplier()));
                             currentBackoff.set(newBackoff);
                         } catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
@@ -348,7 +334,7 @@ public class SyncWorker {
         return Uni.createFrom().emitter(emitter -> {
             try {
                 // In development environment, we don't need Vector Search API
-                if ("dev".equals(System.getProperty("quarkus.profile")) || indexServiceClient == null) {
+                if (config.isDevMode() || indexServiceClient == null) {
                     LOG.infof("DEV MODE: Using MongoDB for vector storage instead of Vector Search API");
                     LOG.infof("DEV MODE: Storing vector for file %s (business: %s, user: %s, dimensions: %d)",
                         file, businessId, userId, embedding.size());
@@ -366,9 +352,9 @@ public class SyncWorker {
                 }
 
                 LOG.infof("Storing vector embedding for file %s in project %s, location %s",
-                    file, projectId, location);
+                    file, config.getGcpProjectId(), config.getGcpLocation());
 
-                IndexName indexName = IndexName.of(projectId, location, "sync-index");
+                IndexName indexName = IndexName.of(config.getGcpProjectId(), config.getGcpLocation(), "sync-index");
                 IndexDatapoint datapoint = IndexDatapoint.newBuilder()
                     .setDatapointId(taskId + "_" + file)
                     .addAllFeatureVector(embedding)
@@ -395,14 +381,14 @@ public class SyncWorker {
                 // Enhanced error logging for API issues
                 if (e.getMessage() != null && (
                     e.getMessage().contains("404") ||
-                    e.getMessage().contains("UNIMPLEMENTED") ||
-                    e.getMessage().contains("NOT_FOUND"))) {
+                        e.getMessage().contains("UNIMPLEMENTED") ||
+                        e.getMessage().contains("NOT_FOUND"))) {
                     LOG.errorf("Vector Search API unavailable. " +
-                        "Check if the correct project (%s) and location (%s) are configured. Error: %s",
-                        projectId, location, e.getMessage());
+                            "Check if the correct project (%s) and location (%s) are configured. Error: %s",
+                        config.getGcpProjectId(), config.getGcpLocation(), e.getMessage());
 
                     // In development mode, we'll consider this a non-fatal error
-                    if ("dev".equals(System.getProperty("quarkus.profile"))) {
+                    if (config.isDevMode()) {
                         LOG.info("Development mode: continuing despite Vector Search API error");
                         emitter.complete(null);
                         return;
@@ -411,8 +397,9 @@ public class SyncWorker {
 
                 // Special handling for NullPointerException (likely happens if client is null)
                 if (e instanceof NullPointerException) {
-                    LOG.errorf("NullPointerException in Vector Search client. This may indicate the client was not initialized properly.");
-                    if ("dev".equals(System.getProperty("quarkus.profile"))) {
+                    LOG.errorf(
+                        "NullPointerException in Vector Search client. This may indicate the client was not initialized properly.");
+                    if (config.isDevMode()) {
                         LOG.info("Development mode: continuing despite Vector Search API error");
                         emitter.complete(null);
                         return;

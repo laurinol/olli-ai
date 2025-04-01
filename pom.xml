@@ -242,14 +242,14 @@
       <artifactId>onnxruntime-engine</artifactId>
       <version>0.26.0</version>
     </dependency>
-    
+
     <!-- DJL API for ND arrays and other core primitives -->
     <dependency>
       <groupId>ai.djl</groupId>
       <artifactId>api</artifactId>
       <version>0.26.0</version>
     </dependency>
-    
+
     <!-- HuggingFace Tokenizers (for BPE tokenization) -->
     <dependency>
       <groupId>ai.djl.huggingface</groupId>
@@ -373,7 +373,6 @@
                 <quarkus.mongodb.connection-string>mongodb://admin:password@localhost:27017</quarkus.mongodb.connection-string>
                 <quarkus.mongodb.database>olli_test</quarkus.mongodb.database>
                 <queue.provider>rabbitmq</queue.provider>
-                <ai.provider>ollama</ai.provider>
               </systemPropertyVariables>
               <includes>
                 <include>**/EndToEndIntegrationTest.java</include>

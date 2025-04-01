@@ -39,8 +39,6 @@ This script checks:
 The application must be configured to use Ollama in `application.properties`:
 
 ```properties
-# Set Ollama as the AI provider
-ai.provider=ollama
 ollama.endpoint=http://localhost:11434
 ollama.embedding.model=llama3
 ollama.embedding.dimension=4096

@@ -28,6 +28,7 @@ import java.util.List;
  * Direct implementation of QueryService that calls Ollama API directly.
  * This implementation is lightweight and efficient.
  */
+@Deprecated
 @ApplicationScoped
 public class OllamaQueryService implements QueryService {
 

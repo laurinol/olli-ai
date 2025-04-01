@@ -34,7 +34,6 @@ public class E2ETestProfile implements QuarkusTestProfile {
         config.put("rabbitmq.password", "pass123");
 
         // AI provider configuration
-        config.put("ai.provider", "ollama");
         config.put("ollama.endpoint", "http://localhost:11434");
 
         // Enhanced logging for tests
@@ -56,12 +55,12 @@ public class E2ETestProfile implements QuarkusTestProfile {
 
         return config;
     }
-    
+
     @Override
     public java.util.Set<Class<?>> getEnabledAlternatives() {
         return Set.of();
     }
-    
+
     // Comment this out for now
     // public java.util.Set<java.lang.Class<?>> getExtraClassesForDiscovery() {
     //     return java.util.Set.of(
@@ -79,6 +78,6 @@ public class E2ETestProfile implements QuarkusTestProfile {
     public boolean disableApplicationLifecycleObservers() {
         return false;
     }
-    
+
     // We'll register the E2ETestResource class in a different way
 }
