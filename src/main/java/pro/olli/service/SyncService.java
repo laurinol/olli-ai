@@ -8,11 +8,13 @@ import io.opentelemetry.api.trace.Span;
 import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
+import pro.olli.config.AppConfig;
 import pro.olli.core.logging.TracingService;
 import pro.olli.models.SyncHistoryEntry;
 import pro.olli.models.SyncTask;
@@ -27,29 +29,27 @@ import pro.olli.connector.Connector;
 public class SyncService {
     private static final Logger LOG = Logger.getLogger(SyncService.class);
 
+    private final AppConfig config;
     private final TaskQueueService taskQueueService;
     private final ConnectorFactory connectorFactory;
     private final SyncRepository syncRepository;
     private final Gson gson;
-    private final String projectId;
-    private final String location;
     private final TracingService tracingService;
 
+    @Inject
     public SyncService(
+        AppConfig config,
         TaskQueueService taskQueueService,
         ConnectorFactory connectorFactory,
-        @Factory SyncRepository syncRepository,
+        SyncRepository syncRepository,
         Gson gson,
-        TracingService tracingService,
-        @ConfigProperty(name = "quarkus.google.cloud.project-id", defaultValue = "olli-ai") String projectId,
-        @ConfigProperty(name = "quarkus.google.cloud.location", defaultValue = "us-west1") String location) {
+        TracingService tracingService) {
+        this.config = config;
         this.taskQueueService = taskQueueService;
         this.connectorFactory = connectorFactory;
         this.syncRepository = syncRepository;
         this.gson = gson;
         this.tracingService = tracingService;
-        this.projectId = projectId;
-        this.location = location;
     }
 
     @SuppressWarnings("ResultOfMethodCallIgnored")

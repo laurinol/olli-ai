@@ -33,8 +33,6 @@ import java.util.stream.Collectors;
 /**
  * Firestore implementation of the InvitationRepository interface.
  */
-@ApplicationScoped
-@Named("firestore-invitation")
 public class FirestoreInvitationRepository implements InvitationRepository {
 
     private static final Logger LOG = Logger.getLogger(FirestoreInvitationRepository.class);
@@ -116,14 +114,14 @@ public class FirestoreInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("firestore-invitation-save")
     public Uni<Void> saveInvitation(Invitation invitation) {
         LOG.infof("Firestore: Saving invitation with ID: %s", invitation.getId());
-        
+
         if (invitation == null) {
             return Uni.createFrom().failure(new AppException("Invitation cannot be null",
                     AppException.ErrorType.VALIDATION_ERROR));
         }
 
         Map<String, Object> data = invitationToMap(invitation);
-        
+
         return Uni.createFrom().future(
                 firestore.collection("invitations").document(invitation.getId()).set(data)
         ).map(ignored -> {
@@ -141,7 +139,7 @@ public class FirestoreInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("firestore-invitation-get")
     public Uni<Optional<Invitation>> getInvitation(String id) {
         LOG.infof("Firestore: Retrieving invitation with ID: %s", id);
-        
+
         return Uni.createFrom().future(
                 firestore.collection("invitations").document(id).get()
         ).map(doc -> {
@@ -161,7 +159,7 @@ public class FirestoreInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("firestore-invitation-list-business")
     public Uni<List<Invitation>> getInvitationsByBusiness(String businessId) {
         LOG.infof("Firestore: Retrieving invitations for business: %s", businessId);
-        
+
         return Uni.createFrom().future(
                 firestore.collection("invitations")
                         .whereEqualTo("businessId", businessId)
@@ -192,7 +190,7 @@ public class FirestoreInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("firestore-invitation-list-email")
     public Uni<List<Invitation>> getInvitationsByEmail(String email) {
         LOG.infof("Firestore: Retrieving invitations for email: %s", email);
-        
+
         return Uni.createFrom().future(
                 firestore.collection("invitations")
                         .whereEqualTo("email", email)
@@ -223,7 +221,7 @@ public class FirestoreInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("firestore-invitation-list-sender")
     public Uni<List<Invitation>> getInvitationsBySender(String userId) {
         LOG.infof("Firestore: Retrieving invitations sent by user: %s", userId);
-        
+
         return Uni.createFrom().future(
                 firestore.collection("invitations")
                         .whereEqualTo("sentByUserId", userId)
@@ -254,7 +252,7 @@ public class FirestoreInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("firestore-invitation-list-pending")
     public Uni<List<Invitation>> getPendingInvitations(String businessId) {
         LOG.infof("Firestore: Retrieving pending invitations for business: %s", businessId);
-        
+
         return Uni.createFrom().future(
                 firestore.collection("invitations")
                         .whereEqualTo("businessId", businessId)
@@ -263,7 +261,7 @@ public class FirestoreInvitationRepository implements InvitationRepository {
         ).map(querySnapshot -> {
             List<Invitation> invitations = new ArrayList<>();
             long now = Instant.now().toEpochMilli();
-            
+
             for (QueryDocumentSnapshot document : querySnapshot.getDocuments()) {
                 // Manual filtering for expiration date because Firestore doesn't directly support
                 // timestamp comparison in queries
@@ -274,7 +272,7 @@ public class FirestoreInvitationRepository implements InvitationRepository {
                     }
                 }
             }
-            
+
             LOG.infof("Found %d pending invitations for business: %s", invitations.size(), businessId);
             return invitations;
         })
@@ -292,7 +290,7 @@ public class FirestoreInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("firestore-invitation-delete")
     public Uni<Void> deleteInvitation(String id) {
         LOG.infof("Firestore: Deleting invitation with ID: %s", id);
-        
+
         return Uni.createFrom().future(
                 firestore.collection("invitations").document(id).delete()
         ).map(ignored -> {
@@ -310,7 +308,7 @@ public class FirestoreInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("firestore-user-is-admin")
     public Uni<Boolean> isUserAdmin(String userId, String businessId) {
         LOG.infof("Firestore: Checking if user %s is admin for business %s", userId, businessId);
-        
+
         return Uni.createFrom().future(
                 firestore.collection("business_users")
                         .whereEqualTo("id", userId)

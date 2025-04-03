@@ -28,8 +28,6 @@ import java.util.Optional;
 /**
  * MongoDB implementation of the BillingRepository interface.
  */
-@ApplicationScoped
-@Named("mongodb-billing")
 public class MongoBillingRepository implements BillingRepository {
 
     private static final Logger LOG = Logger.getLogger(MongoBillingRepository.class);
@@ -37,12 +35,10 @@ public class MongoBillingRepository implements BillingRepository {
     private static final String BUSINESSES_COLLECTION = "businesses";
 
     private final MongoClient mongoClient;
-    private final Gson gson;
 
     @Inject
-    public MongoBillingRepository(MongoClient mongoClient, Gson gson) {
+    public MongoBillingRepository(MongoClient mongoClient) {
         this.mongoClient = mongoClient;
-        this.gson = gson;
     }
 
     private MongoCollection<Document> getTransactionsCollection() {
@@ -113,11 +109,11 @@ public class MongoBillingRepository implements BillingRepository {
         // This is a placeholder implementation
         return Uni.createFrom().item(new ArrayList<>());
     }
-    
+
     @Override
     public Uni<Optional<BillingTransaction>> getTransactionByExternalId(String externalPaymentId) {
         LOG.infof("MongoDB: Getting transaction with external payment ID %s", externalPaymentId);
-        
+
         if (externalPaymentId == null || externalPaymentId.isBlank()) {
             LOG.warn("Attempt to get transaction with null or blank external payment ID");
             return Uni.createFrom().item(Optional.empty());

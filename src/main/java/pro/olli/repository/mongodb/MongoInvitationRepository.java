@@ -13,53 +13,48 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
-import org.bson.Document;
-import org.bson.conversions.Bson;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
-import org.eclipse.microprofile.faulttolerance.Retry;
-import org.eclipse.microprofile.faulttolerance.Timeout;
-import org.jboss.logging.Logger;
-import pro.olli.core.resilience.exception.AppException;
-import pro.olli.models.Invitation;
-import pro.olli.repository.InvitationRepository;
-
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.bson.Document;
+import org.bson.conversions.Bson;
+import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
+import org.eclipse.microprofile.faulttolerance.Retry;
+import org.eclipse.microprofile.faulttolerance.Timeout;
+import org.jboss.logging.Logger;
+import pro.olli.config.AppConfig;
+import pro.olli.core.resilience.exception.AppException;
+import pro.olli.models.Invitation;
+import pro.olli.repository.InvitationRepository;
 
 /**
  * MongoDB implementation of the InvitationRepository interface.
  */
-@ApplicationScoped
-@Named("mongodb-invitation")
 public class MongoInvitationRepository implements InvitationRepository {
 
     private static final Logger LOG = Logger.getLogger(MongoInvitationRepository.class);
     private static final String INVITATIONS_COLLECTION = "invitations";
     private static final String BUSINESS_USERS_COLLECTION = "business_users";
 
+    private final AppConfig config;
     private final MongoClient mongoClient;
-    private final String databaseName;
 
     @Inject
-    public MongoInvitationRepository(
-            MongoClient mongoClient,
-            @ConfigProperty(name = "quarkus.mongodb.database", defaultValue = "olli") String databaseName) {
+    public MongoInvitationRepository(AppConfig config, MongoClient mongoClient) {
+        this.config = config;
         this.mongoClient = mongoClient;
-        this.databaseName = databaseName;
-        LOG.infof("MongoInvitationRepository initialized with database: %s", databaseName);
+        LOG.infof("MongoInvitationRepository initialized with database: %s", config.getMongoDbName());
     }
 
     // Helper methods to get the collections
     private MongoCollection<Document> getInvitationsCollection() {
-        return mongoClient.getDatabase(databaseName).getCollection(INVITATIONS_COLLECTION);
+        return mongoClient.getDatabase(config.getMongoDbName()).getCollection(INVITATIONS_COLLECTION);
     }
 
     private MongoCollection<Document> getBusinessUsersCollection() {
-        return mongoClient.getDatabase(databaseName).getCollection(BUSINESS_USERS_COLLECTION);
+        return mongoClient.getDatabase(config.getMongoDbName()).getCollection(BUSINESS_USERS_COLLECTION);
     }
 
     // Document mapping methods
@@ -100,7 +95,7 @@ public class MongoInvitationRepository implements InvitationRepository {
         Instant expiresAt = Instant.ofEpochMilli(doc.getLong("expiresAt"));
 
         return new Invitation(id, businessId, email, role, sentByUserId,
-                createdAt, expiresAt, accepted);
+            createdAt, expiresAt, accepted);
     }
 
     // Implementation methods
@@ -119,7 +114,7 @@ public class MongoInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("mongo-invitation-save")
     public Uni<Void> saveInvitation(Invitation invitation) {
         LOG.infof("MongoDB: Saving invitation with ID: %s", invitation.getId());
-        
+
         if (invitation == null) {
             return Uni.createFrom().failure(new AppException("Invitation cannot be null",
                 AppException.ErrorType.VALIDATION_ERROR));
@@ -130,36 +125,36 @@ public class MongoInvitationRepository implements InvitationRepository {
                 // Check if we're updating an existing invitation to accepted=true
                 boolean updatingToAcceptedState = invitation.isAccepted();
                 if (updatingToAcceptedState) {
-                    LOG.infof("MongoDB: Updating invitation to accepted=true for ID: %s", 
+                    LOG.infof("MongoDB: Updating invitation to accepted=true for ID: %s",
                         invitation.getId());
                 }
-                
+
                 Document doc = invitationToDocument(invitation);
-                
+
                 // First check if invitation exists
                 Document existing = getInvitationsCollection().find(Filters.eq("id", invitation.getId())).first();
                 if (existing != null) {
-                    LOG.infof("MongoDB: Found existing invitation with ID %s, current accepted status: %s", 
+                    LOG.infof("MongoDB: Found existing invitation with ID %s, current accepted status: %s",
                         invitation.getId(), existing.getBoolean("accepted", false));
                 }
-                
+
                 // Replace or insert
                 getInvitationsCollection().replaceOne(
                     Filters.eq("id", invitation.getId()),
                     doc,
                     new ReplaceOptions().upsert(true)
                 );
-                
+
                 // Verify the update
                 Document saved = getInvitationsCollection().find(Filters.eq("id", invitation.getId())).first();
                 if (saved != null) {
                     boolean savedAcceptedStatus = saved.getBoolean("accepted", false);
-                    LOG.infof("MongoDB: Verified invitation saved. ID: %s, accepted: %s", 
+                    LOG.infof("MongoDB: Verified invitation saved. ID: %s, accepted: %s",
                         saved.getString("id"), savedAcceptedStatus);
                 } else {
                     LOG.warnf("MongoDB: Failed to verify invitation save. Not found after save operation.");
                 }
-                
+
                 return null;
             } catch (Exception e) {
                 LOG.errorf("Failed to save invitation with ID %s: %s", invitation.getId(), e.getMessage());
@@ -175,7 +170,7 @@ public class MongoInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("mongo-invitation-get")
     public Uni<Optional<Invitation>> getInvitation(String id) {
         LOG.infof("MongoDB: Retrieving invitation with ID: %s", id);
-        
+
         return Uni.createFrom().item(() -> {
             try {
                 Document doc = getInvitationsCollection().find(Filters.eq("id", id)).first();
@@ -196,27 +191,27 @@ public class MongoInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("mongo-invitation-list-business")
     public Uni<List<Invitation>> getInvitationsByBusiness(String businessId) {
         LOG.infof("MongoDB: Retrieving invitations for business: %s", businessId);
-        
+
         return Uni.createFrom().item(() -> {
             try {
                 List<Invitation> invitations = new ArrayList<>();
-                
+
                 FindIterable<Document> docs = getInvitationsCollection().find(
                     Filters.eq("businessId", businessId)
                 ).sort(new Document("createdAt", -1)); // Newest first
-                
+
                 for (Document doc : docs) {
                     Invitation invitation = documentToInvitation(doc);
                     if (invitation != null) {
                         invitations.add(invitation);
                     }
                 }
-                
+
                 LOG.infof("Found %d invitations for business: %s", invitations.size(), businessId);
                 return invitations;
             } catch (Exception e) {
                 LOG.errorf("Failed to retrieve invitations for business %s: %s", businessId, e.getMessage());
-                throw new AppException("Failed to retrieve invitations by business", 
+                throw new AppException("Failed to retrieve invitations by business",
                     e, AppException.ErrorType.DATA_ACCESS_ERROR);
             }
         });
@@ -229,27 +224,27 @@ public class MongoInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("mongo-invitation-list-email")
     public Uni<List<Invitation>> getInvitationsByEmail(String email) {
         LOG.infof("MongoDB: Retrieving invitations for email: %s", email);
-        
+
         return Uni.createFrom().item(() -> {
             try {
                 List<Invitation> invitations = new ArrayList<>();
-                
+
                 FindIterable<Document> docs = getInvitationsCollection().find(
                     Filters.eq("email", email)
                 ).sort(new Document("createdAt", -1)); // Newest first
-                
+
                 for (Document doc : docs) {
                     Invitation invitation = documentToInvitation(doc);
                     if (invitation != null) {
                         invitations.add(invitation);
                     }
                 }
-                
+
                 LOG.infof("Found %d invitations for email: %s", invitations.size(), email);
                 return invitations;
             } catch (Exception e) {
                 LOG.errorf("Failed to retrieve invitations for email %s: %s", email, e.getMessage());
-                throw new AppException("Failed to retrieve invitations by email", 
+                throw new AppException("Failed to retrieve invitations by email",
                     e, AppException.ErrorType.DATA_ACCESS_ERROR);
             }
         });
@@ -262,27 +257,27 @@ public class MongoInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("mongo-invitation-list-sender")
     public Uni<List<Invitation>> getInvitationsBySender(String userId) {
         LOG.infof("MongoDB: Retrieving invitations sent by user: %s", userId);
-        
+
         return Uni.createFrom().item(() -> {
             try {
                 List<Invitation> invitations = new ArrayList<>();
-                
+
                 FindIterable<Document> docs = getInvitationsCollection().find(
                     Filters.eq("sentByUserId", userId)
                 ).sort(new Document("createdAt", -1)); // Newest first
-                
+
                 for (Document doc : docs) {
                     Invitation invitation = documentToInvitation(doc);
                     if (invitation != null) {
                         invitations.add(invitation);
                     }
                 }
-                
+
                 LOG.infof("Found %d invitations sent by user: %s", invitations.size(), userId);
                 return invitations;
             } catch (Exception e) {
                 LOG.errorf("Failed to retrieve invitations sent by user %s: %s", userId, e.getMessage());
-                throw new AppException("Failed to retrieve invitations by sender", 
+                throw new AppException("Failed to retrieve invitations by sender",
                     e, AppException.ErrorType.DATA_ACCESS_ERROR);
             }
         });
@@ -295,12 +290,12 @@ public class MongoInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("mongo-invitation-list-pending")
     public Uni<List<Invitation>> getPendingInvitations(String businessId) {
         LOG.infof("MongoDB: Retrieving pending invitations for business: %s", businessId);
-        
+
         return Uni.createFrom().item(() -> {
             try {
                 List<Invitation> invitations = new ArrayList<>();
                 Instant now = Instant.now();
-                
+
                 // Find invitations that are:
                 // 1. For the specified business
                 // 2. Not accepted
@@ -312,19 +307,19 @@ public class MongoInvitationRepository implements InvitationRepository {
                         Filters.gt("expiresAt", now.toEpochMilli())
                     )
                 ).sort(new Document("createdAt", -1)); // Newest first
-                
+
                 for (Document doc : docs) {
                     Invitation invitation = documentToInvitation(doc);
                     if (invitation != null) {
                         invitations.add(invitation);
                     }
                 }
-                
+
                 LOG.infof("Found %d pending invitations for business: %s", invitations.size(), businessId);
                 return invitations;
             } catch (Exception e) {
                 LOG.errorf("Failed to retrieve pending invitations for business %s: %s", businessId, e.getMessage());
-                throw new AppException("Failed to retrieve pending invitations", 
+                throw new AppException("Failed to retrieve pending invitations",
                     e, AppException.ErrorType.DATA_ACCESS_ERROR);
             }
         });
@@ -337,7 +332,7 @@ public class MongoInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("mongo-invitation-delete")
     public Uni<Void> deleteInvitation(String id) {
         LOG.infof("MongoDB: Deleting invitation with ID: %s", id);
-        
+
         return Uni.createFrom().item(() -> {
             try {
                 getInvitationsCollection().deleteOne(Filters.eq("id", id));
@@ -357,7 +352,7 @@ public class MongoInvitationRepository implements InvitationRepository {
     @CircuitBreakerName("mongo-user-is-admin")
     public Uni<Boolean> isUserAdmin(String userId, String businessId) {
         LOG.infof("MongoDB: Checking if user %s is admin for business %s", userId, businessId);
-        
+
         return Uni.createFrom().item(() -> {
             try {
                 // Query for business_user with the given userId and businessId
@@ -366,10 +361,10 @@ public class MongoInvitationRepository implements InvitationRepository {
                     Filters.eq("businessId", businessId),
                     Filters.eq("role", "admin")
                 );
-                
+
                 Document businessUser = getBusinessUsersCollection().find(filter).first();
                 boolean isAdmin = (businessUser != null);
-                
+
                 LOG.infof("User %s is admin for business %s: %s", userId, businessId, isAdmin);
                 return isAdmin;
             } catch (Exception e) {

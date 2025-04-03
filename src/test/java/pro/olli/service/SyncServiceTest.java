@@ -8,6 +8,7 @@ import io.smallrye.mutiny.Uni;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import pro.olli.config.AppConfig;
 import pro.olli.core.logging.TracingService;
 import pro.olli.queue.TaskQueueService;
 import pro.olli.repository.SyncRepository;
@@ -24,12 +25,12 @@ import static org.mockito.Mockito.*;
 // Removing QuarkusTest so we don't need CDI injection for this unit test
 class SyncServiceTest {
 
+    private AppConfig config;
     private SyncService syncService;
     private TaskQueueService taskQueueService;
     private ConnectorFactory connectorFactory;
     private SyncRepository syncRepository;
     private TracingService tracingService;
-    private Gson gson;
 
     @BeforeEach
     void setUp() {
@@ -37,10 +38,10 @@ class SyncServiceTest {
         connectorFactory = Mockito.mock(ConnectorFactory.class);
         syncRepository = Mockito.mock(SyncRepository.class);
         tracingService = Mockito.mock(TracingService.class);
-        gson = new Gson(); // Use real Gson instance - can't mock final classes
+        Gson gson = new Gson(); // Use real Gson instance - can't mock final classes
         String projectId = "test-project"; // Dummy value
         String location = "us-test1"; // Dummy value
-        syncService = new SyncService(taskQueueService, connectorFactory, syncRepository, gson, tracingService, projectId, location);
+        syncService = new SyncService(config, taskQueueService, connectorFactory, syncRepository, gson, tracingService);
     }
 
     @Test

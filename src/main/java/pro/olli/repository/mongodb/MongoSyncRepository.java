@@ -34,8 +34,6 @@ import pro.olli.repository.SyncRepository;
 /**
  * MongoDB implementation of the SyncRepository interface.
  */
-@ApplicationScoped
-@Named("mongodb-sync")
 public class MongoSyncRepository implements SyncRepository {
 
     private static final Logger LOG = Logger.getLogger(MongoSyncRepository.class);
@@ -44,17 +42,14 @@ public class MongoSyncRepository implements SyncRepository {
 
     private final AppConfig config;
     private final MongoClient mongoClient;
-    private final String databaseName;
 
     @Inject
     public MongoSyncRepository(
         AppConfig config,
-        MongoClient mongoClient,
-        @ConfigProperty(name = "quarkus.mongodb.database", defaultValue = "olli") String databaseName) {
+        MongoClient mongoClient) {
         this.config = config;
         this.mongoClient = mongoClient;
-        this.databaseName = databaseName;
-        LOG.infof("MongoSyncRepository initialized with database: %s", databaseName);
+        LOG.infof("MongoSyncRepository initialized with database: %s", config.getMongoDbName());
 
         // Initialize the embeddings collection with necessary indexes
         if (config.isDevMode()) {
@@ -64,11 +59,11 @@ public class MongoSyncRepository implements SyncRepository {
     }
 
     private MongoCollection<Document> getUsersCollection() {
-        return mongoClient.getDatabase(databaseName).getCollection(USERS_COLLECTION);
+        return mongoClient.getDatabase(config.getMongoDbName()).getCollection(USERS_COLLECTION);
     }
 
     private MongoCollection<Document> getEmbeddingsCollection() {
-        MongoCollection<Document> collection = mongoClient.getDatabase(databaseName)
+        MongoCollection<Document> collection = mongoClient.getDatabase(config.getMongoDbName())
             .getCollection(EMBEDDINGS_COLLECTION);
 
         // Ensure we have the indexes we need (only need to do this once, but MongoDB safely handles repeated calls)

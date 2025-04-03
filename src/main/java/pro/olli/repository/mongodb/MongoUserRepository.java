@@ -3,7 +3,6 @@
  */
 package pro.olli.repository.mongodb;
 
-import com.google.gson.Gson;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -11,17 +10,20 @@ import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.ReplaceOptions;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
-import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.inject.Named;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
+import pro.olli.config.AppConfig;
 import pro.olli.core.resilience.exception.AppException;
 import pro.olli.models.Business;
 import pro.olli.models.BusinessUser;
@@ -30,17 +32,9 @@ import pro.olli.models.User;
 import pro.olli.models.Verification;
 import pro.olli.repository.UserRepository;
 
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
 /**
  * MongoDB implementation of the UserRepository interface.
  */
-@ApplicationScoped
-@Named("mongodb-user")
 public class MongoUserRepository implements UserRepository {
 
     private static final Logger LOG = Logger.getLogger(MongoUserRepository.class);
@@ -49,37 +43,34 @@ public class MongoUserRepository implements UserRepository {
     private static final String VERIFICATIONS_COLLECTION = "verifications";
     private static final String BUSINESS_USERS_COLLECTION = "business_users";
 
+    private final AppConfig config;
     private final MongoClient mongoClient;
-    private final Gson gson;
-    private final String databaseName;
 
     @Inject
     public MongoUserRepository(
-            MongoClient mongoClient,
-            Gson gson,
-            @ConfigProperty(name = "quarkus.mongodb.database", defaultValue = "olli") String databaseName) {
+            AppConfig config,
+            MongoClient mongoClient) {
+        this.config = config;
         this.mongoClient = mongoClient;
-        this.gson = gson;
-        this.databaseName = databaseName;
-        LOG.infof("MongoUserRepository initialized with database: %s", databaseName);
+        LOG.infof("MongoUserRepository initialized with database: %s", config.getMongoDbName());
     }
 
     // Helper methods to get the collections
     private MongoCollection<Document> getUsersCollection() {
-        return mongoClient.getDatabase(databaseName).getCollection(USERS_COLLECTION);
+        return mongoClient.getDatabase(config.getMongoDbName()).getCollection(USERS_COLLECTION);
     }
 
 
     private MongoCollection<Document> getVerificationsCollection() {
-        return mongoClient.getDatabase(databaseName).getCollection(VERIFICATIONS_COLLECTION);
+        return mongoClient.getDatabase(config.getMongoDbName()).getCollection(VERIFICATIONS_COLLECTION);
     }
 
     private MongoCollection<Document> getBusinessesCollection() {
-        return mongoClient.getDatabase(databaseName).getCollection(BUSINESSES_COLLECTION);
+        return mongoClient.getDatabase(config.getMongoDbName()).getCollection(BUSINESSES_COLLECTION);
     }
 
     private MongoCollection<Document> getBusinessUsersCollection() {
-        return mongoClient.getDatabase(databaseName).getCollection(BUSINESS_USERS_COLLECTION);
+        return mongoClient.getDatabase(config.getMongoDbName()).getCollection(BUSINESS_USERS_COLLECTION);
     }
 
     // Document mapping methods
@@ -644,7 +635,7 @@ public class MongoUserRepository implements UserRepository {
             }
         });
     }
-    
+
     @Override
     public Uni<Optional<Business>> getBusinessBySubscriptionId(String subscriptionId) {
         LOG.infof("MongoDB: Looking up business by subscription ID: %s", subscriptionId);
@@ -653,51 +644,51 @@ public class MongoUserRepository implements UserRepository {
                 // Create a query for the stripeSubscriptionId in metadata
                 Document query = new Document("metadata.stripeSubscriptionId", subscriptionId);
                 Document doc = getBusinessesCollection().find(query).first();
-                
+
                 if (doc == null) {
                     LOG.debugf("No business found with subscription ID: %s", subscriptionId);
                     return Optional.empty();
                 }
-                
+
                 // Extract business data from the document
                 String id = doc.getString("id");
                 String name = doc.getString("name");
                 String plan = doc.getString("plan");
                 String status = doc.getString("status");
-                
+
                 // Handle timestamps
                 Instant subscriptionStartDate = null;
                 Object subscriptionStartObj = doc.get("subscriptionStartDate");
                 if (subscriptionStartObj instanceof Long) {
                     subscriptionStartDate = Instant.ofEpochMilli((Long) subscriptionStartObj);
                 }
-                
+
                 Instant nextBillingDate = null;
                 Object nextBillingObj = doc.get("nextBillingDate");
                 if (nextBillingObj instanceof Long) {
                     nextBillingDate = Instant.ofEpochMilli((Long) nextBillingObj);
                 }
-                
+
                 String paymentMethodId = doc.getString("paymentMethodId");
-                
+
                 Instant createdAt = null;
                 Object createdAtObj = doc.get("createdAt");
                 if (createdAtObj instanceof Long) {
                     createdAt = Instant.ofEpochMilli((Long) createdAtObj);
                 }
-                
+
                 Instant updatedAt = null;
                 Object updatedAtObj = doc.get("updatedAt");
                 if (updatedAtObj instanceof Long) {
                     updatedAt = Instant.ofEpochMilli((Long) updatedAtObj);
                 }
-                
+
                 @SuppressWarnings("unchecked")
                 Map<String, Object> settings = (Map<String, Object>) doc.get("settings");
-                
+
                 @SuppressWarnings("unchecked")
                 Map<String, Object> metadata = (Map<String, Object>) doc.get("metadata");
-                
+
                 // Create the business object with available data
                 Business business = new Business(
                         id,
@@ -715,10 +706,10 @@ public class MongoUserRepository implements UserRepository {
                         0L, // documentsProcessedThisMonth
                         0L // queriesThisMonth
                 );
-                
+
                 LOG.infof("MongoDB: Found business %s for subscription ID: %s", id, subscriptionId);
                 return Optional.of(business);
-                
+
             } catch (Exception e) {
                 LOG.errorf("Failed to retrieve business by subscription ID %s: %s", subscriptionId, e.getMessage());
                 throw new AppException("Failed to retrieve business by subscription ID",

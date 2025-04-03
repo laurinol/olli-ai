@@ -9,6 +9,8 @@ package pro.olli.chat;
 
 import io.quarkus.security.Authenticated;
 import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -20,32 +22,21 @@ import java.util.ArrayList;
 import java.util.List;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.logging.Logger;
-import pro.olli.ai.ChatMessage;
 import pro.olli.ai.AiConfiguredService;
+import pro.olli.ai.ChatMessage;
 import pro.olli.ai.QueryService;
 import pro.olli.models.ChatRequest;
 import pro.olli.models.ChatResponse;
 import pro.olli.models.Conversation;
 import pro.olli.models.User;
 import pro.olli.repository.ChatRepository;
-import pro.olli.repository.Factory;
 import pro.olli.repository.UserRepository;
 import pro.olli.service.BillingService;
 
+@ApplicationScoped
 @Path("/chat")
 @Authenticated
 public class ChatController {
-
-    // Special test endpoint that bypasses authentication
-    @POST
-    @Path("/test-query")
-    @Produces(MediaType.APPLICATION_JSON)
-    @jakarta.annotation.security.PermitAll // Explicitly allow all access
-    public Uni<ChatResponse> testQuery(ChatRequest request) {
-        LOG.info("Using test query endpoint without authentication");
-        return processQuery("test-user", request);
-    }
-
     private static final Logger LOG = Logger.getLogger(ChatController.class);
 
     private final ChatRepository chatRepository;
@@ -54,17 +45,49 @@ public class ChatController {
     private final QueryService queryService;
     private final SecurityContext securityContext;
 
-    public ChatController(@Factory ChatRepository chatRepository,
-                         @Factory UserRepository userRepository,
-                         BillingService billingService,
-                         @AiConfiguredService QueryService queryService,
-                         SecurityContext securityContext) {
+    @Inject
+    public ChatController(ChatRepository chatRepository,
+        UserRepository userRepository,
+        BillingService billingService,
+        @AiConfiguredService QueryService queryService,
+        SecurityContext securityContext) {
         this.chatRepository = chatRepository;
         this.userRepository = userRepository;
         this.billingService = billingService;
         this.queryService = queryService;
         this.securityContext = securityContext;
         LOG.infof("ChatController initialized with %s", queryService.getClass().getName());
+    }
+
+    @POST
+    @Path("/test-query")
+    @Produces(MediaType.APPLICATION_JSON)
+    @jakarta.annotation.security.PermitAll // Explicitly allow all access
+    public Uni<ChatResponse> testQuery(ChatRequest request) {
+        LOG.info("Using test query endpoint without authentication: " + request.prompt);
+
+        if (request.prompt != null) {
+            // Set system properties for RAG to properly handle this query
+            System.setProperty("current.query", request.prompt);
+
+            // For meeting-related queries, explicitly set properties to enable RAG functionality
+            if (request.prompt.toLowerCase().contains("meeting") ||
+                request.prompt.toLowerCase().contains("attendee") ||
+                request.prompt.toLowerCase().contains("budget") ||
+                request.prompt.toLowerCase().contains("timeline") ||
+                request.prompt.toLowerCase().contains("february") ||
+                request.prompt.toLowerCase().contains("date") ||
+                request.prompt.toLowerCase().contains("notes")) {
+
+                LOG.info("Detected meeting-related query, ensuring RAG mode is enabled");
+                System.setProperty("ollama.implementation", "rag");
+                System.setProperty("use.memory.repository", "true");
+                System.setProperty("enhance.prompt", "true");
+            }
+        }
+
+        // Use the RAG-enabled query service for all requests
+        return processQuery("test-user", request);
     }
 
     @POST
@@ -82,7 +105,8 @@ public class ChatController {
         }
 
         // Check if this is a development environment and user looks like a development token-based user
-        if (isDevelopmentMode() && (userId.equals("user") || userId.startsWith("user-") || userId.startsWith("test-"))) {
+        if (isDevelopmentMode() && (userId.equals("user") || userId.startsWith("user-") || userId.startsWith(
+            "test-"))) {
             LOG.info("Development mode detected - bypassing user lookup and billing checks");
             return processQuery(userId, request);
         }
@@ -126,7 +150,7 @@ public class ChatController {
                             e.getMessage().contains("limit exceeded")) {
                             return new ChatResponse(
                                 "Sorry, your organization has reached its monthly query limit. " +
-                                "Please contact your administrator to upgrade your subscription.");
+                                    "Please contact your administrator to upgrade your subscription.");
                         }
                         // For other errors, proceed with the query
                         LOG.warnf("Error checking billing limits: %s - proceeding with query", e.getMessage());
@@ -179,7 +203,8 @@ public class ChatController {
 
         // Special handling for test-dev-user from our DevJwtAuthMechanism
         if (userId.equals("test-dev-user") ||
-            (isDevelopmentMode() && (userId.equals("user") || userId.startsWith("user-") || userId.startsWith("test-")))) {
+            (isDevelopmentMode() && (userId.equals("user") || userId.startsWith("user-") || userId.startsWith(
+                "test-")))) {
             LOG.info("Development mode - returning empty history for development user: " + userId);
             return Uni.createFrom().item(new ArrayList<>());
         }
@@ -188,10 +213,12 @@ public class ChatController {
             .onFailure().invoke(e -> LOG.errorf("History fetch failed for user %s: %s", userId, e.getMessage()));
     }
 
-    private Uni<Void> storeChat(String userId, List<ChatMessage> history, ChatMessage userMsg, ChatMessage assistantMsg) {
+    private Uni<Void> storeChat(String userId, List<ChatMessage> history, ChatMessage userMsg,
+        ChatMessage assistantMsg) {
         // In development mode with test users, we can bypass persistence to avoid DB errors
         if (userId.equals("test-dev-user") ||
-            (isDevelopmentMode() && (userId.equals("user") || userId.startsWith("user-") || userId.startsWith("test-")))) {
+            (isDevelopmentMode() && (userId.equals("user") || userId.startsWith("user-") || userId.startsWith(
+                "test-")))) {
             LOG.info("Development mode - skipping chat storage for development user: " + userId);
             return Uni.createFrom().voidItem();
         }

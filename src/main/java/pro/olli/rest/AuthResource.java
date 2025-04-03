@@ -5,6 +5,7 @@ package pro.olli.rest;
 
 import io.quarkus.oidc.runtime.OidcJwtCallerPrincipal;
 import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -34,7 +35,8 @@ public class AuthResource {
     private final UserRepository userRepository;
     private final SecurityContext securityContext;
 
-    public AuthResource(@Factory UserRepository userRepository, SecurityContext securityContext) {
+    @Inject
+    public AuthResource(UserRepository userRepository, SecurityContext securityContext) {
         this.userRepository = userRepository;
         this.securityContext = securityContext;
     }
@@ -60,19 +62,19 @@ public class AuthResource {
                     String testEmail = System.getProperty("test.email", "test@example.com");
                     String testBusinessId = System.getProperty("test.businessId", "test-business");
                     String testUserId = System.getProperty("test.userId", "user-test123");
-                    
+
                     Map<String, Object> userData = new HashMap<>();
                     userData.put("userId", testUserId);
                     userData.put("email", testEmail);
                     userData.put("businessId", testBusinessId);
                     userData.put("role", "admin");
                     userData.put("dev", true);
-                    
+
                     LOG.infof("Returning test profile data in dev mode: %s", userData);
                     emitter.complete(Response.ok(userData).build());
                     return;
                 }
-                
+
                 LOG.error("No authenticated user in profile request");
                 emitter.complete(Response.status(Response.Status.UNAUTHORIZED).build());
                 return;
@@ -80,7 +82,7 @@ public class AuthResource {
 
             String userId = principal.getName();
             LOG.infof("Getting profile for authenticated user: %s", userId);
-            
+
             userRepository.getUser(userId)
                 .flatMap(userOpt -> {
                     if (userOpt.isEmpty()) {
@@ -91,27 +93,27 @@ public class AuthResource {
                                 .build()
                         );
                     }
-                    
+
                     User user = userOpt.get();
                     LOG.debugf("Found user for profile: id=%s, email=%s", user.getId(), user.getEmail());
-                    
+
                     // Ensure metadata exists and is not null
                     Map<String, Object> userData = new HashMap<>();
                     userData.put("userId", user.getId());
                     userData.put("email", user.getEmail());
-                    
+
                     if (user.getMetadata() != null) {
                         userData.putAll(user.getMetadata());
                     }
-                    
+
                     // Get the business ID from metadata
                     String businessId = (String) userData.get("businessId");
-                    
+
                     if (businessId == null) {
                         LOG.warnf("User %s has no business ID in metadata", user.getId());
                         return Uni.createFrom().item(Response.ok(userData).build());
                     }
-                    
+
                     // Get the business user record to append role info
                     return userRepository.getBusinessUser(businessId, user.getId())
                         .map(businessUserOpt -> {
@@ -119,16 +121,16 @@ public class AuthResource {
                                 BusinessUser businessUser = businessUserOpt.get();
                                 userData.put("role", businessUser.getRole());
                                 userData.put("businessName", businessUser.getBusinessId()); // TODO: Get actual business name
-                                
+
                                 if (businessUser.getSyncHistory() != null) {
                                     userData.put("syncHistory", businessUser.getSyncHistory());
                                 }
-                                
+
                                 LOG.debugf("Added business user data: role=%s", businessUser.getRole());
                             } else {
                                 LOG.warnf("No business user record found for user %s in business %s", user.getId(), businessId);
                             }
-                            
+
                             return Response.ok(userData).build();
                         });
                 })
@@ -174,18 +176,18 @@ public class AuthResource {
                     if (businessOpt.isEmpty()) {
                         // New business - admin registers
                         Business business = new Business(businessId, businessId, "basic"); // Default to basic plan
-                        
+
                         // Create business user
-                        BusinessUser businessUser = new BusinessUser(userId, businessId, email, 
+                        BusinessUser businessUser = new BusinessUser(userId, businessId, email,
                             principal.getClaim("name"), "admin"); // Owner gets admin role
-                        
+
                         return userRepository.saveBusiness(business)
                             .flatMap(v -> userRepository.saveBusinessUser(businessUser));
                     } else {
                         // Existing business - add employee
-                        BusinessUser businessUser = new BusinessUser(userId, businessId, email, 
+                        BusinessUser businessUser = new BusinessUser(userId, businessId, email,
                             principal.getClaim("name"), "user"); // New users get standard role
-                            
+
                         return userRepository.saveBusinessUser(businessUser);
                     }
                 })

@@ -3,56 +3,53 @@
  */
 package pro.olli.auth;
 
-import io.smallrye.jwt.build.Jwt;
 import io.quarkus.mailer.Mail;
 import io.quarkus.mailer.reactive.ReactiveMailer;
+import io.smallrye.jwt.build.Jwt;
 import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.eclipse.microprofile.config.ConfigProvider;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import org.jboss.logging.Logger;
 import org.mindrot.jbcrypt.BCrypt;
+import pro.olli.config.AppConfig;
 import pro.olli.models.Business;
 import pro.olli.models.BusinessUser;
 import pro.olli.models.User;
 import pro.olli.models.Verification;
 import pro.olli.repository.UserRepository;
-import pro.olli.repository.Factory;
 
-import java.security.SecureRandom;
-import java.time.Instant;
-import java.time.Duration;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
-
+@ApplicationScoped
 @Path("/auth")
 public class AuthController {
 
     private static final Logger LOG = Logger.getLogger(AuthController.class);
 
+    private final AppConfig config;
     private final UserRepository userRepository;
     private final ReactiveMailer mailer;
-    private final String appDomain;
 
     @Inject
     public AuthController(
-        @Factory UserRepository userRepository,
-        ReactiveMailer mailer,
-        @ConfigProperty(name = "app.domain", defaultValue = "http://localhost:8080") String appDomain) {
+        AppConfig config,
+        UserRepository userRepository,
+        ReactiveMailer mailer) {
+        this.config = config;
         this.userRepository = userRepository;
         this.mailer = mailer;
-        this.appDomain = appDomain;
     }
 
     @POST
@@ -75,11 +72,13 @@ public class AuthController {
                 userRepository.saveVerification(verification)
                     .subscribe().with(
                         success -> {
-                            String verificationLink = String.format("%s/auth/register?token=%s", appDomain, token);
+                            String verificationLink = String.format("%s/auth/register?token=%s", config.getAppDomain(),
+                                token);
                             // Create the email with the verification link
                             Mail mail = Mail.withText(inviteRequest.email,
                                 "Verify Your Email with Olli-AI",
-                                "Click here to verify your email and complete registration: " + verificationLink + "\nExpires in 48 hours.");
+                                "Click here to verify your email and complete registration: " + verificationLink
+                                    + "\nExpires in 48 hours.");
 
                             // Send the email using the reactive mailer, which won't block
                             mailer.send(mail)
@@ -89,7 +88,8 @@ public class AuthController {
                                 );
 
                             // Acknowledge immediately without waiting for email to be sent
-                            LOG.infof("Verification created for %s for business %s", inviteRequest.email, inviteRequest.businessId);
+                            LOG.infof("Verification created for %s for business %s", inviteRequest.email,
+                                inviteRequest.businessId);
                             emitter.complete(Response.ok(Map.of("message", "Verification email sent")).build());
                         },
                         failure -> {
@@ -140,8 +140,8 @@ public class AuthController {
                 LOG.infof("Login successful for user: %s", user.getId());
                 String jwt = issueJwtToken(user.getId());
                 return Response.ok(Map.of("token", jwt, "userId", user.getId()))
-                        .header("Authorization", "Bearer " + jwt)
-                        .build();
+                    .header("Authorization", "Bearer " + jwt)
+                    .build();
             })
             .onFailure().invoke(e -> LOG.errorf("Login failed due to error: %s", e.getMessage()));
     }
@@ -151,7 +151,7 @@ public class AuthController {
     @Produces(MediaType.APPLICATION_JSON)
     public Uni<Response> register(RegisterRequest registerRequest) {
         LOG.infof("Registration request received for email: %s with token: %s",
-                  registerRequest.email, registerRequest.token);
+            registerRequest.email, registerRequest.token);
 
         // Use AtomicReference to hold values we need across steps
         AtomicReference<String> userId = new AtomicReference<>();
@@ -180,7 +180,8 @@ public class AuthController {
                             businessId.set(verificationBusinessId);
                             Instant expiresAt = verification.getExpiresAt();
 
-                            LOG.infof("Found verification for email: %s, business: %s", verificationEmail, verificationBusinessId);
+                            LOG.infof("Found verification for email: %s, business: %s", verificationEmail,
+                                verificationBusinessId);
 
                             if (!verificationEmail.equals(registerRequest.email) || Instant.now().isAfter(expiresAt)) {
                                 LOG.warnf("Verification email mismatch or expired. Expected: %s, Got: %s, Expired: %s",
@@ -225,12 +226,15 @@ public class AuthController {
                                             try {
                                                 Business business;
                                                 if (businessOpt.isEmpty()) {
-                                                    LOG.infof("Business doesn't exist, creating it: %s", verificationBusinessId);
-                                                    business = new Business(verificationBusinessId, verificationBusinessId, "basic");
+                                                    LOG.infof("Business doesn't exist, creating it: %s",
+                                                        verificationBusinessId);
+                                                    business = new Business(verificationBusinessId, verificationBusinessId,
+                                                        "basic");
                                                     // Save business first
                                                     userRepository.saveBusiness(business).subscribe().with(
                                                         v -> {
-                                                            LOG.infof("STEP 3a: Business created: %s", verificationBusinessId);
+                                                            LOG.infof("STEP 3a: Business created: %s",
+                                                                verificationBusinessId);
                                                             createBusinessUserAndFinishWithVerification(
                                                                 newUserId, verificationBusinessId, registerRequest.email,
                                                                 verification, registerRequest, emitter);
@@ -238,12 +242,14 @@ public class AuthController {
                                                         err -> {
                                                             LOG.errorf("Failed to save business: %s", err.getMessage());
                                                             emitter.complete(Response.status(500)
-                                                                .entity(Map.of("error", "Failed to save business: " + err.getMessage()))
+                                                                .entity(Map.of("error",
+                                                                    "Failed to save business: " + err.getMessage()))
                                                                 .build());
                                                         }
                                                     );
                                                 } else {
-                                                    LOG.infof("STEP 3b: Business already exists: %s", verificationBusinessId);
+                                                    LOG.infof("STEP 3b: Business already exists: %s",
+                                                        verificationBusinessId);
                                                     createBusinessUserAndFinishWithVerification(
                                                         newUserId, verificationBusinessId, registerRequest.email,
                                                         verification, registerRequest, emitter);
@@ -288,8 +294,8 @@ public class AuthController {
     }
 
     private void createBusinessUserAndFinishWithVerification(String userId, String businessId, String email,
-                                            Verification verification, RegisterRequest registerRequest,
-                                            io.smallrye.mutiny.subscription.UniEmitter<? super Response> emitter) {
+        Verification verification, RegisterRequest registerRequest,
+        io.smallrye.mutiny.subscription.UniEmitter<? super Response> emitter) {
         LOG.infof("STEP 4: Creating business user association for user %s in business %s", userId, businessId);
 
         // Create business user association
@@ -310,7 +316,7 @@ public class AuthController {
                 // Use the withVerified() method to ensure we get a verified copy
                 Verification verifiedObj = verification.withVerified();
                 LOG.infof("STEP 5: Created verified verification object with token=%s, verified=%s",
-                        verifiedObj.getToken(), verifiedObj.isVerified());
+                    verifiedObj.getToken(), verifiedObj.isVerified());
 
                 userRepository.saveVerification(verifiedObj).subscribe().with(
                     v -> {
@@ -344,7 +350,7 @@ public class AuthController {
             }
         );
     }
-    
+
 
     private String generateTemporaryToken() {
         SecureRandom random = new SecureRandom();
@@ -368,7 +374,7 @@ public class AuthController {
             }
             return false;
         }
-        
+
         try {
             return BCrypt.checkpw(password, storedHash);
         } catch (Exception e) {
@@ -389,7 +395,7 @@ public class AuthController {
     private String issueJwtToken(String userId) {
         try {
             LOG.debugf("Issuing JWT token for user: %s", userId);
-            
+
             // Create a simple JWT with minimal required claims
             return Jwt.issuer("olli-ai-backend")
                 .subject(userId)
@@ -405,16 +411,19 @@ public class AuthController {
     }
 
     public static class InviteRequest {
+
         public String email;
         public String businessId;
     }
 
     public static class LoginRequest {
+
         public String email;
         public String password;
     }
 
     public static class RegisterRequest {
+
         public String email;
         public String password;
         public String token;

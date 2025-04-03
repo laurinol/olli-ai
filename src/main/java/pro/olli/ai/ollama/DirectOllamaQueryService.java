@@ -17,6 +17,7 @@ import org.jboss.logging.Logger;
 import pro.olli.ai.AiImplementationType;
 import pro.olli.ai.ChatMessage;
 import pro.olli.ai.QueryService;
+import pro.olli.config.AppConfig;
 import pro.olli.core.metrics.Timed;
 import pro.olli.core.resilience.exception.AppException;
 
@@ -28,26 +29,20 @@ import java.util.List;
  * Direct implementation of QueryService for Ollama.
  * This uses the Ollama API directly without any third-party dependencies.
  */
-@ApplicationScoped
 public class DirectOllamaQueryService implements QueryService {
 
     private static final Logger LOG = Logger.getLogger(DirectOllamaQueryService.class);
 
+    private final AppConfig config;
     private final io.vertx.mutiny.core.Vertx vertx;
-    private final String ollamaEndpoint;
-    private final String ollamaModel;
 
     @Inject
-    public DirectOllamaQueryService(
-            io.vertx.mutiny.core.Vertx vertx,
-            @ConfigProperty(name = "ollama.endpoint", defaultValue = "http://localhost:11434") String ollamaEndpoint,
-            @ConfigProperty(name = "ollama.chat.model", defaultValue = "tinyllama") String ollamaModel) {
+    public DirectOllamaQueryService(AppConfig config, io.vertx.mutiny.core.Vertx vertx) {
+        this.config = config;
         this.vertx = vertx;
-        this.ollamaEndpoint = ollamaEndpoint;
-        this.ollamaModel = ollamaModel;
 
         LOG.infof("Created DirectOllamaQueryService with model=%s, endpoint=%s",
-            ollamaModel, ollamaEndpoint);
+            config.getOllamaChatModel(), config.getOllamaEndpoint());
     }
 
     @Override
@@ -66,7 +61,7 @@ public class DirectOllamaQueryService implements QueryService {
     @CircuitBreakerName("direct-ollama-query")
     @Fallback(fallbackMethod = "fallbackQuery")
     public Uni<String> query(String prompt, List<ChatMessage> history) {
-        LOG.infof("Querying with DirectOllamaQueryService: %s", ollamaModel);
+        LOG.infof("Querying with DirectOllamaQueryService: %s", config.getOllamaChatModel());
 
         // Validate input
         if (prompt == null || prompt.trim().isEmpty()) {
@@ -82,9 +77,9 @@ public class DirectOllamaQueryService implements QueryService {
         // Parse URL
         URI uri;
         try {
-            uri = new URI(ollamaEndpoint + "/api/generate");
+            uri = new URI(config.getOllamaEndpoint() + "/api/generate");
         } catch (Exception e) {
-            LOG.errorf("Invalid URL: %s", ollamaEndpoint + "/api/generate", e);
+            LOG.errorf("Invalid URL: %s", config.getOllamaEndpoint() + "/api/generate", e);
             return Uni.createFrom().failure(
                 new AppException("Invalid Ollama endpoint URL", e,
                     AppException.ErrorType.CONFIGURATION_ERROR));
@@ -122,7 +117,7 @@ public class DirectOllamaQueryService implements QueryService {
 
         // Build request body
         JsonObject requestBody = new JsonObject()
-            .put("model", ollamaModel)
+            .put("model", config.getOllamaChatModel())
             .put("prompt", fullPrompt.toString())
             .put("stream", false);
 
@@ -170,14 +165,11 @@ public class DirectOllamaQueryService implements QueryService {
      */
     public Uni<String> fallbackQuery(String prompt, List<ChatMessage> history) {
         LOG.warnf("Using fallback query generation for prompt of length: %d", prompt.length());
-        return Uni.createFrom().item(() -> {
-            String fallbackResponse = "I'm sorry, but I'm currently experiencing technical difficulties. " +
-                "This is likely because:\n\n" +
-                "1. Ollama is not running or is unreachable at " + ollamaEndpoint + "\n" +
-                "2. The required model '" + ollamaModel + "' has not been pulled\n\n" +
-                "Please check the server logs for more detailed information.";
-            return fallbackResponse;
-        });
+        return Uni.createFrom().item(() -> "I'm sorry, but I'm currently experiencing technical difficulties. " +
+            "This is likely because:\n\n" +
+            "1. Ollama is not running or is unreachable at " + config.getOllamaEndpoint() + "\n" +
+            "2. The required model '" + config.getOllamaChatModel() + "' has not been pulled\n\n" +
+            "Please check the server logs for more detailed information.");
     }
 
     /**
@@ -185,7 +177,8 @@ public class DirectOllamaQueryService implements QueryService {
      */
     @Timed(value = "direct-ollama.query.health.check", type = Timed.OperationType.EXTERNAL_SERVICE)
     public Uni<Boolean> healthCheck() {
-        LOG.infof("Checking DirectOllamaQueryService health at endpoint: %s with model: %s", ollamaEndpoint, ollamaModel);
+        LOG.infof("Checking DirectOllamaQueryService health at endpoint: %s with model: %s", config.getOllamaEndpoint(),
+            config.getOllamaChatModel());
 
         return query("test", List.of())
             .map(response -> response != null && !response.isEmpty() &&

@@ -9,6 +9,7 @@ import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Sorts;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -26,24 +27,23 @@ import java.util.stream.Collectors;
 /**
  * MongoDB implementation of the ChatRepository interface.
  */
-@ApplicationScoped
-@Named("mongodb-chat")
 public class MongoChatRepository implements ChatRepository {
 
     private static final Logger LOG = Logger.getLogger(MongoChatRepository.class);
     private static final String CHATS_COLLECTION = "chats";
     private static final String CONVERSATIONS_COLLECTION = "conversations";
-    
+
     private final MongoClient mongoClient;
 
+    @Inject
     public MongoChatRepository(MongoClient mongoClient) {
         this.mongoClient = mongoClient;
     }
-    
+
     private MongoCollection<Document> getChatsCollection() {
         return mongoClient.getDatabase("olli").getCollection(CHATS_COLLECTION);
     }
-    
+
     private MongoCollection<Document> getConversationsCollection(String userId) {
         // Use a naming convention for user-specific chat collections
         return mongoClient.getDatabase("olli").getCollection(CONVERSATIONS_COLLECTION);
@@ -52,7 +52,7 @@ public class MongoChatRepository implements ChatRepository {
     @Override
     public Uni<Void> storeConversation(String userId, String conversationId, List<ChatMessage> messages) {
         LOG.infof("Storing conversation %s for user %s", conversationId, userId);
-        
+
         return Uni.createFrom().item(() -> {
             try {
                 // Convert messages to BSON documents
@@ -63,14 +63,14 @@ public class MongoChatRepository implements ChatRepository {
                         .append("timestamp", System.currentTimeMillis())
                     )
                     .collect(Collectors.toList());
-                
+
                 // Create conversation document
                 Document conversationDoc = new Document()
                     .append("userId", userId)
                     .append("conversationId", conversationId)
                     .append("messages", messageDocs)
                     .append("timestamp", System.currentTimeMillis());
-                
+
                 // Use upsert to handle both new conversations and updates
                 getConversationsCollection(userId).replaceOne(
                     Filters.and(
@@ -80,11 +80,11 @@ public class MongoChatRepository implements ChatRepository {
                     conversationDoc,
                     new com.mongodb.client.model.ReplaceOptions().upsert(true)
                 );
-                
+
                 LOG.infof("Successfully stored conversation %s for user %s", conversationId, userId);
                 return null;
             } catch (Exception e) {
-                LOG.errorf("Failed to store conversation %s for user %s: %s", 
+                LOG.errorf("Failed to store conversation %s for user %s: %s",
                           conversationId, userId, e.getMessage());
                 throw new RuntimeException("Failed to store conversation", e);
             }
@@ -94,18 +94,18 @@ public class MongoChatRepository implements ChatRepository {
     @Override
     public Uni<List<Conversation>> getConversations(String userId) {
         LOG.infof("Retrieving conversations for user %s", userId);
-        
+
         return Uni.createFrom().item(() -> {
             try {
                 List<Conversation> conversations = new ArrayList<>();
-                
+
                 // Query for all conversations for this user
                 getConversationsCollection(userId)
                     .find(Filters.eq("userId", userId))
                     .sort(Sorts.descending("timestamp"))
                     .forEach(doc -> {
                         String conversationId = doc.getString("conversationId");
-                        
+
                         // Extract and convert messages
                         List<ChatMessage> messages = new ArrayList<>();
                         @SuppressWarnings("unchecked")
@@ -117,10 +117,10 @@ public class MongoChatRepository implements ChatRepository {
                                 messages.add(new ChatMessage(role, content));
                             }
                         }
-                        
+
                         conversations.add(new Conversation(conversationId, messages));
                     });
-                
+
                 LOG.infof("Retrieved %d conversations for user %s", conversations.size(), userId);
                 return conversations;
             } catch (Exception e) {

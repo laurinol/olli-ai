@@ -24,8 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-@ApplicationScoped
-@Named("firestore-billing")
 public class FirestoreBillingRepository implements BillingRepository {
 
     private static final Logger LOG = Logger.getLogger(FirestoreBillingRepository.class);
@@ -33,12 +31,10 @@ public class FirestoreBillingRepository implements BillingRepository {
     private static final String BUSINESSES_COLLECTION = "businesses";
 
     private final Firestore firestore;
-    private final Gson gson;
 
     @Inject
-    public FirestoreBillingRepository(Firestore firestore, Gson gson) {
+    public FirestoreBillingRepository(Firestore firestore) {
         this.firestore = firestore;
-        this.gson = gson;
     }
 
     @Override
@@ -194,38 +190,38 @@ public class FirestoreBillingRepository implements BillingRepository {
                 for (QueryDocumentSnapshot doc : querySnapshot.getDocuments()) {
                     transactions.add(mapToTransaction(doc));
                 }
-                LOG.infof("Retrieved %d failed payments after %s", 
+                LOG.infof("Retrieved %d failed payments after %s",
                         transactions.size(), afterDate);
                 return transactions;
             })
             .onFailure().invoke(e -> LOG.errorf("Failed to get failed payments: %s", e.getMessage()));
     }
-    
+
     @Override
     public Uni<Optional<BillingTransaction>> getTransactionByExternalId(String externalPaymentId) {
         if (externalPaymentId == null || externalPaymentId.isBlank()) {
             LOG.warn("Attempt to get transaction with null or blank external payment ID");
             return Uni.createFrom().item(Optional.empty());
         }
-        
+
         Query query = firestore
             .collection(TRANSACTIONS_COLLECTION)
             .whereEqualTo("externalPaymentId", externalPaymentId)
             .limit(1);
-            
+
         return Uni.createFrom().future(query.get())
             .map(querySnapshot -> {
                 if (querySnapshot.isEmpty()) {
                     LOG.infof("No transaction found with external payment ID: %s", externalPaymentId);
                     return Optional.<BillingTransaction>empty();
                 }
-                
+
                 BillingTransaction transaction = mapToTransaction(querySnapshot.getDocuments().get(0));
-                LOG.infof("Found transaction %s with external payment ID: %s", 
+                LOG.infof("Found transaction %s with external payment ID: %s",
                         transaction.getId(), externalPaymentId);
                 return Optional.of(transaction);
             })
-            .onFailure().invoke(e -> LOG.errorf("Failed to get transaction by external ID: %s, Error: %s", 
+            .onFailure().invoke(e -> LOG.errorf("Failed to get transaction by external ID: %s, Error: %s",
                     externalPaymentId, e.getMessage()));
     }
 

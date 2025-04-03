@@ -7,6 +7,7 @@ import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.mutiny.core.Vertx;
 import jakarta.inject.Inject;
 import java.net.URI;
 import java.time.temporal.ChronoUnit;
@@ -26,6 +27,7 @@ import pro.olli.core.resilience.exception.AppException;
  * Direct implementation of EmbeddingService that calls Ollama API directly. This implementation is lightweight and
  * efficient.
  */
+@Deprecated
 public class OllamaEmbeddingService implements EmbeddingService {
 
     private static final Logger LOG = Logger.getLogger(OllamaEmbeddingService.class);
@@ -35,7 +37,8 @@ public class OllamaEmbeddingService implements EmbeddingService {
     private final String ollamaModel;
     private final int embeddingDimension;
 
-    public OllamaEmbeddingService(io.vertx.mutiny.core.Vertx vertx, String ollamaEndpoint, String ollamaModel,
+    @Inject
+    public OllamaEmbeddingService(Vertx vertx, String ollamaEndpoint, String ollamaModel,
         int embeddingDimension) {
         this.vertx = vertx;
         this.ollamaEndpoint = ollamaEndpoint;

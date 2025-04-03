@@ -5,16 +5,13 @@
 package pro.olli.ai;
 
 import io.quarkus.runtime.Startup;
+import io.vertx.mutiny.core.Vertx;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
-import pro.olli.ai.ollama.DirectOllamaQueryService;
 import pro.olli.ai.ollama.EnhancedRAGOllamaQueryService;
-import pro.olli.ai.ollama.OllamaQueryService;
-import pro.olli.ai.ollama.SimpleRAGOllamaQueryService;
+import pro.olli.ai.ollama.RAGOllamaQueryService;
 import pro.olli.ai.onnx.OnnxEmbeddingService;
 import pro.olli.ai.vertexai.VertexAiEmbeddingService;
 import pro.olli.ai.vertexai.VertexAiQueryService;
@@ -28,15 +25,15 @@ public class AiProducer {
     private static final Logger LOG = Logger.getLogger(AiProducer.class);
 
     private final AppConfig config;
+    private final Vertx vertx;
     private final SyncRepository syncRepository;
 
     @Inject
-    io.vertx.mutiny.core.Vertx vertx;
-
-    @Inject
-    public AiProducer(AppConfig config, SyncRepository syncRepository) {
+    public AiProducer(AppConfig config, Vertx vertx, SyncRepository syncRepository) {
         this.config = config;
+        this.vertx = vertx;
         this.syncRepository = syncRepository;
+        LOG.info("Creating AIProducer which will produce query and embedding objects");
     }
 
     /**
@@ -50,16 +47,12 @@ public class AiProducer {
      */
     @Produces
     @ApplicationScoped
-    @AiConfiguredService
+    //@AiConfiguredService
     public EmbeddingService produceEmbeddingService(AppConfig config) {
-        // Check if we're in production profile
-        String profile = System.getProperty("quarkus.profile", "dev");
-        boolean isProd = "prod".equalsIgnoreCase(profile);
-
         // In production, always use VertexAI
-        if (isProd) {
+        if (!config.isDevMode()) {
             LOG.info("Production environment detected - using VertexAI for embeddings");
-            return new VertexAiEmbeddingService(config.getGcpProjectId(), config.getGcpVertexLocation(), config.getGcpVertexEndpoint());
+            return new VertexAiEmbeddingService(config);
         } else {
             // Default to ONNX embeddings for development
             LOG.info("Development environment using local ONNX embeddings");
@@ -81,22 +74,39 @@ public class AiProducer {
     @ApplicationScoped
     @AiConfiguredService
     public QueryService produceQueryService() {
-        // Check if we're in production profile
-        String profile = System.getProperty("quarkus.profile", "dev");
-        boolean isProd = "prod".equalsIgnoreCase(profile);
-
         // Production always uses VertexAI
-        if (isProd) {
+        if (!config.isDevMode()) {
             LOG.info("Production environment - using VertexAI for queries");
-            return new VertexAiQueryService(config.getGcpProjectId(), config.getGcpVertexLocation(), config.getGcpVertexEndpoint());
+            return new VertexAiQueryService(config);
         } else {
-            // For development Ollama, use direct implementation by default
-            boolean useDirectImpl = Boolean.parseBoolean(System.getProperty("ollama.use.direct", "true"));
+            // Check implementation type from properties
+            String implType = System.getProperty("ollama.implementation", "direct");
 
-            LOG.info("Development using " + (useDirectImpl ? "direct" : "standard") + " Ollama implementation");
-            return useDirectImpl
-                ? new DirectOllamaQueryService(vertx, config.getOllamaEndpoint(), config.getOllamaChatModel())
-                : new OllamaQueryService(vertx, config.getOllamaEndpoint(), config.getOllamaChatModel());
+            //if ("rag".equalsIgnoreCase(implType)) {
+                // RAG implementation requested
+                String ragImpl = System.getProperty("ollama.rag.implementation", "simple");
+
+                LOG.info("Development using RAG Ollama implementation (" + ragImpl + ")");
+
+                // Use the injected SyncRepository (will be memory repository when using RAG)
+                LOG.info("Using injected SyncRepository for RAG: " + syncRepository.getClass().getName());
+
+                if ("enhanced".equalsIgnoreCase(ragImpl)) {
+                    LOG.info("Using EnhancedRAGOllamaQueryService");
+                    return new EnhancedRAGOllamaQueryService(config, vertx, produceEmbeddingService(config), syncRepository);
+                } else {
+                    LOG.info("Using RAGOllamaQueryService");
+                    return new RAGOllamaQueryService(config, vertx, produceEmbeddingService(config), syncRepository);
+                }
+            /*} else {
+                // Standard implementation
+                boolean useDirectImpl = Boolean.parseBoolean(System.getProperty("ollama.use.direct", "true"));
+
+                LOG.info("Development using " + (useDirectImpl ? "direct" : "standard") + " Ollama implementation");
+                return useDirectImpl
+                    ? new DirectOllamaQueryService(config, vertx)
+                    : new OllamaQueryService(vertx, config.getOllamaEndpoint(), config.getOllamaChatModel());
+            }*/
         }
     }
 

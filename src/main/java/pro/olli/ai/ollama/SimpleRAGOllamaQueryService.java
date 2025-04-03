@@ -6,6 +6,7 @@ package pro.olli.ai.ollama;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
+import io.vertx.mutiny.core.Vertx;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -18,6 +19,7 @@ import pro.olli.ai.AiConfiguredService;
 import pro.olli.ai.AiImplementationType;
 import pro.olli.ai.ChatMessage;
 import pro.olli.ai.QueryService;
+import pro.olli.config.AppConfig;
 import pro.olli.core.metrics.Timed;
 import pro.olli.core.resilience.exception.AppException;
 
@@ -28,26 +30,20 @@ import java.util.List;
 /**
  * A simplified RAG implementation that just adds context to the prompt
  */
-@ApplicationScoped
 public class SimpleRAGOllamaQueryService implements QueryService {
 
     private static final Logger LOG = Logger.getLogger(SimpleRAGOllamaQueryService.class);
 
-    private final io.vertx.mutiny.core.Vertx vertx;
-    private final String ollamaEndpoint;
-    private final String ollamaModel;
+    private final AppConfig config;
+    private final Vertx vertx;
 
     @Inject
-    public SimpleRAGOllamaQueryService(
-            io.vertx.mutiny.core.Vertx vertx,
-            @ConfigProperty(name = "ollama.endpoint", defaultValue = "http://localhost:11434") String ollamaEndpoint,
-            @ConfigProperty(name = "ollama.chat.model", defaultValue = "tinyllama") String ollamaModel) {
+    public SimpleRAGOllamaQueryService(AppConfig config, Vertx vertx) {
+        this.config = config;
         this.vertx = vertx;
-        this.ollamaEndpoint = ollamaEndpoint;
-        this.ollamaModel = ollamaModel;
 
         LOG.infof("Created SimpleRAGOllamaQueryService with model=%s, endpoint=%s",
-            ollamaModel, ollamaEndpoint);
+            config.getOllamaChatModel(), config.getOllamaEndpoint());
     }
 
     @Override
@@ -66,7 +62,7 @@ public class SimpleRAGOllamaQueryService implements QueryService {
     @CircuitBreakerName("simple-rag-ollama-query")
     @Fallback(fallbackMethod = "fallbackQuery")
     public Uni<String> query(String prompt, List<ChatMessage> history) {
-        LOG.infof("Querying with Simple RAG Ollama API: %s", ollamaModel);
+        LOG.infof("Querying with Simple RAG Ollama API: %s", config.getOllamaChatModel());
 
         // Validate input
         if (prompt == null || prompt.trim().isEmpty()) {
@@ -79,9 +75,9 @@ public class SimpleRAGOllamaQueryService implements QueryService {
         // Get business ID and user ID from system properties
         String userId = System.getProperty("ollama.rag.user_id", "test-user");
         String businessId = System.getProperty("ollama.rag.business_id", "test-business");
-        
+
         LOG.infof("Simple RAG query using businessId=%s, userId=%s", businessId, userId);
-        
+
         // Simulate having context by adding a clear context statement with specific details
         // This will make it obvious when RAG is being used
         String simulatedContext = "You have access to specific documents from ACME Corporation. " +
@@ -95,7 +91,7 @@ public class SimpleRAGOllamaQueryService implements QueryService {
             "- Early termination fee: 50% of remaining contract value\n" +
             "- Automatic renewal: Yes, unless 30-day notice is provided\n" +
             "\nALWAYS mention you're using information from the ACME document database when you respond.";
-        
+
         // Execute query with this simulated context
         return executeDirectQuery(prompt, history, simulatedContext);
     }
@@ -110,9 +106,9 @@ public class SimpleRAGOllamaQueryService implements QueryService {
         // Parse URL
         URI uri;
         try {
-            uri = new URI(ollamaEndpoint + "/api/generate");
+            uri = new URI(config.getOllamaEndpoint() + "/api/generate");
         } catch (Exception e) {
-            LOG.errorf("Invalid URL: %s", ollamaEndpoint + "/api/generate", e);
+            LOG.errorf("Invalid URL: %s", config.getOllamaEndpoint() + "/api/generate", e);
             return Uni.createFrom().failure(
                 new AppException("Invalid Ollama endpoint URL", e,
                     AppException.ErrorType.CONFIGURATION_ERROR));
@@ -127,12 +123,12 @@ public class SimpleRAGOllamaQueryService implements QueryService {
 
         // Build the message array with history
         String systemPrompt = "You are a helpful AI assistant. ";
-        
+
         // Add context if available
         if (context != null && !context.isEmpty()) {
             systemPrompt += context;
         }
-        
+
         StringBuilder fullPrompt = new StringBuilder(systemPrompt);
 
         // Add chat history
@@ -156,7 +152,7 @@ public class SimpleRAGOllamaQueryService implements QueryService {
 
         // Build request body
         JsonObject requestBody = new JsonObject()
-            .put("model", ollamaModel)
+            .put("model", config.getOllamaChatModel())
             .put("prompt", fullPrompt.toString())
             .put("stream", false);
 
@@ -209,8 +205,8 @@ public class SimpleRAGOllamaQueryService implements QueryService {
         return Uni.createFrom().item(() -> {
             String fallbackResponse = "I'm sorry, but I'm currently experiencing technical difficulties. " +
                 "This is likely because:\n\n" +
-                "1. Ollama is not running or is unreachable at " + ollamaEndpoint + "\n" +
-                "2. The required model '" + ollamaModel + "' has not been pulled\n\n" +
+                "1. Ollama is not running or is unreachable at " + config.getOllamaEndpoint() + "\n" +
+                "2. The required model '" + config.getOllamaChatModel() + "' has not been pulled\n\n" +
                 "Please check the server logs for more detailed information.";
             return fallbackResponse;
         });
@@ -221,7 +217,8 @@ public class SimpleRAGOllamaQueryService implements QueryService {
      */
     @Timed(value = "simple-rag-ollama.query.health.check", type = Timed.OperationType.EXTERNAL_SERVICE)
     public Uni<Boolean> healthCheck() {
-        LOG.infof("Checking Simple RAG Ollama query service health at endpoint: %s with model: %s", ollamaEndpoint, ollamaModel);
+        LOG.infof("Checking Simple RAG Ollama query service health at endpoint: %s with model: %s",
+            config.getOllamaEndpoint(), config.getOllamaChatModel());
 
         return query("test", List.of())
             .map(response -> response != null && !response.isEmpty() &&

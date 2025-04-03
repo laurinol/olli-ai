@@ -21,8 +21,6 @@ import pro.olli.core.resilience.exception.AppException;
 import pro.olli.models.SyncHistoryEntry;
 import pro.olli.repository.SyncRepository;
 
-@ApplicationScoped
-@Named("firestore-sync")
 public class FirestoreSyncRepository implements SyncRepository {
 
     private static final Logger LOG = Logger.getLogger(FirestoreSyncRepository.class);

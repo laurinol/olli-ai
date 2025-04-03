@@ -17,8 +17,6 @@ import pro.olli.repository.StatsRepository;
 import java.util.Map;
 import java.util.Optional;
 
-@ApplicationScoped
-@Named("firestore-stats")
 public class FirestoreStatsRepository implements StatsRepository {
 
     private static final Logger LOG = Logger.getLogger(FirestoreStatsRepository.class);

@@ -9,12 +9,13 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 /**
- * Centralized configuration management for the application.
- * This class provides a single point of access for all configuration properties.
+ * Centralized configuration management for the application. This class provides a single point of access for all
+ * configuration properties.
  */
 @Startup
 @ApplicationScoped
 public class AppConfig {
+
     private static final Logger LOG = Logger.getLogger(AppConfig.class);
 
     // Environment
@@ -130,6 +131,15 @@ public class AppConfig {
 
     @ConfigProperty(name = "ollama.chat.model", defaultValue = "tinyllama")
     String ollamaChatModel;
+
+    @ConfigProperty(name = "ollama.rag.max-context-tokens", defaultValue = "2048")
+    int ollamaRagMaxContextTokens;
+
+    @ConfigProperty(name = "ollama.rag.max-chunks", defaultValue = "5")
+    int ollamaRagMaxChunks;
+
+    @ConfigProperty(name = "ollama.rag.chunking-strategy", defaultValue = "SENTENCE")
+    String ollamaRagChunkingStrategy;
 
     @ConfigProperty(name = "ai.tokenizer.path", defaultValue = "./models/tokenizer")
     String aiTokenizerPath;
@@ -375,7 +385,9 @@ public class AppConfig {
         return gcpVertexLocation;
     }
 
-    public String getGcpVertexEndpoint() { return gcpVertexEndpoint; }
+    public String getGcpVertexEndpoint() {
+        return gcpVertexEndpoint;
+    }
 
     public String getGcpVertexModel() {
         return gcpVertexModel;
@@ -396,6 +408,12 @@ public class AppConfig {
     public String getOllamaChatModel() {
         return ollamaChatModel;
     }
+
+    public int getOllamaRagMaxContextTokens() { return ollamaRagMaxContextTokens; }
+
+    public int getOllamaRagMaxChunks() { return ollamaRagMaxChunks; }
+
+    public String getOllamaRagChunkingStrategy() { return ollamaRagChunkingStrategy; }
 
     public String getAiTokenizerPath() {
         return aiTokenizerPath;

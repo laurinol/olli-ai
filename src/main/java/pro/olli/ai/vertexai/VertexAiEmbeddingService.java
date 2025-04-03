@@ -27,30 +27,24 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import pro.olli.ai.EmbeddingService;
+import pro.olli.config.AppConfig;
 import pro.olli.core.metrics.Timed;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import pro.olli.ai.AiConfiguredService;
 import pro.olli.ai.AiImplementationType;
 
-@ApplicationScoped
 public class VertexAiEmbeddingService implements EmbeddingService {
 
     private static final Logger LOG = Logger.getLogger(VertexAiEmbeddingService.class);
 
+    private final AppConfig config;
     protected final PredictionServiceClient predictionServiceClient;
-    private final String projectId;
-    private final String location;
-    private final String endpointId;
 
     @Inject
-    public VertexAiEmbeddingService(
-            @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai") String projectId,
-            @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-west1") String location,
-            @ConfigProperty(name = "gcp.vertex.endpoint-id", defaultValue = "your-endpoint-id") String endpointId) {
-        this.projectId = projectId;
-        this.location = location;
-        this.endpointId = endpointId;
+    public VertexAiEmbeddingService(AppConfig config) {
+        LOG.info("Creating VertexAI Embedding Service");
+        this.config = config;
 
         try {
             PredictionServiceSettings settings = PredictionServiceSettings.newBuilder().build();
@@ -76,7 +70,8 @@ public class VertexAiEmbeddingService implements EmbeddingService {
     public Uni<List<Float>> generateEmbedding(String text) {
         return Uni.createFrom().emitter(emitter -> {
             try {
-                EndpointName endpointName = EndpointName.of(projectId, location, endpointId);
+                EndpointName endpointName = EndpointName.of(config.getGcpProjectId(), config.getGcpVertexLocation(),
+                    config.getGcpVertexEndpoint());
                 PredictRequest.Builder requestBuilder = PredictRequest.newBuilder()
                     .setEndpoint(endpointName.toString())
                     .addInstances(buildInstance(text));

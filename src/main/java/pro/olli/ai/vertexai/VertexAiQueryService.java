@@ -21,38 +21,28 @@ import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
 import java.time.temporal.ChronoUnit;
 import jakarta.inject.Inject;
-import pro.olli.ai.AiImplementationType;
 import pro.olli.ai.ChatMessage;
 import pro.olli.ai.QueryService;
+import pro.olli.config.AppConfig;
 import pro.olli.core.metrics.Timed;
 import pro.olli.core.resilience.exception.AppException;
 
 import java.io.IOException;
 import java.util.List;
 
-import jakarta.enterprise.context.ApplicationScoped;
-
-@ApplicationScoped
 public class VertexAiQueryService implements QueryService {
 
     private static final Logger LOG = Logger.getLogger(VertexAiQueryService.class);
 
+    private final AppConfig config;
     protected final PredictionServiceClient predictionServiceClient;
-    private final String projectId;
-    private final String location;
-    private final String endpointId;
 
     @ConfigProperty(name = "gcp.vertex.chat-model", defaultValue = "gemini-1.5-pro")
     String chatModel;
 
     @Inject
-    public VertexAiQueryService(
-            @ConfigProperty(name = "gcp.project-id", defaultValue = "olli-ai") String projectId,
-            @ConfigProperty(name = "gcp.vertex.location", defaultValue = "us-west1") String location,
-            @ConfigProperty(name = "gcp.vertex.endpoint-id", defaultValue = "your-endpoint-id") String endpointId) {
-        this.projectId = projectId;
-        this.location = location;
-        this.endpointId = endpointId;
+    public VertexAiQueryService(AppConfig config) {
+        this.config = config;
 
         try {
             PredictionServiceSettings settings = PredictionServiceSettings.newBuilder().build();
@@ -80,7 +70,8 @@ public class VertexAiQueryService implements QueryService {
     public Uni<String> query(String prompt, List<ChatMessage> history) {
         return Uni.createFrom().emitter(emitter -> {
             try {
-                EndpointName endpointName = EndpointName.of(projectId, location, endpointId);
+                EndpointName endpointName = EndpointName.of(config.getGcpProjectId(), config.getGcpVertexLocation(),
+                    config.getGcpVertexEndpoint());
                 PredictRequest.Builder requestBuilder = PredictRequest.newBuilder()
                     .setEndpoint(endpointName.toString())
                     .addInstances(buildChatInstance(prompt, history));

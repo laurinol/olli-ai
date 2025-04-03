@@ -17,7 +17,6 @@ import io.smallrye.mutiny.Uni;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.inject.Named;
 import java.io.InputStream;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -39,7 +38,6 @@ import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
-import pro.olli.ai.AiConfiguredService;
 import pro.olli.ai.EmbeddingService;
 import pro.olli.config.AppConfig;
 import pro.olli.connector.Connector;
@@ -69,11 +67,11 @@ public class SyncWorker {
 
     @Inject
     public SyncWorker(AppConfig config, ConnectorFactory connectorFactory,
-        @AiConfiguredService EmbeddingService embeddingService,
+        EmbeddingService embeddingService,
         TaskQueueService taskQueueService,
         BillingService billingService,
         IndexServiceClient indexServiceClient,
-        @Named("mongodb-sync") SyncRepository syncRepository) {
+        SyncRepository syncRepository) {
         this.config = config;
         this.connectorFactory = connectorFactory;
         this.embeddingService = embeddingService;

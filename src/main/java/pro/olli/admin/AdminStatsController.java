@@ -9,6 +9,7 @@ import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 import io.quarkus.security.Authenticated;
 import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -16,6 +17,7 @@ import jakarta.ws.rs.core.MediaType;
 import java.util.Optional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
+import pro.olli.config.AppConfig;
 import pro.olli.repository.Factory;
 import pro.olli.repository.StatsRepository;
 
@@ -38,6 +40,7 @@ public class AdminStatsController {
 
     private static final Logger LOG = Logger.getLogger(AdminStatsController.class);
 
+    private final AppConfig config;
     private final StatsRepository statsRepository;
     private final CloudTasksClient cloudTasksClient;
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -45,27 +48,9 @@ public class AdminStatsController {
     @ConfigProperty(name = "queue.provider", defaultValue = "google")
     String queueProvider;
 
-    // RabbitMQ config (dev only)
-    @ConfigProperty(name = "rabbitmq.host", defaultValue = "localhost")
-    String rabbitMqHost;
-    @ConfigProperty(name = "rabbitmq.port", defaultValue = "5672")
-    int rabbitMqPort;
-    @ConfigProperty(name = "rabbitmq.username", defaultValue = "guest")
-    String rabbitMqUsername;
-    @ConfigProperty(name = "rabbitmq.password", defaultValue = "guest")
-    String rabbitMqPassword;
-    @ConfigProperty(name = "rabbitmq.management.port", defaultValue = "15672")
-    int rabbitMqManagementPort;
-
-    // Google Cloud Tasks config (prod)
-    @ConfigProperty(name = "gcp.project-id")
-    String projectId;
-    @ConfigProperty(name = "gcp.location-id", defaultValue = "us-central1")
-    String locationId;
-    @ConfigProperty(name = "gcp.queue-id", defaultValue = "chat-requests")
-    String queueId;
-
-    public AdminStatsController(@Factory StatsRepository statsRepository, CloudTasksClient cloudTasksClient) {
+    @Inject
+    public AdminStatsController(AppConfig config, StatsRepository statsRepository, CloudTasksClient cloudTasksClient) {
+        this.config = config;
         this.statsRepository = statsRepository;
         this.cloudTasksClient = cloudTasksClient;
     }
@@ -144,7 +129,7 @@ public class AdminStatsController {
     private Uni<Integer> getGoogleCloudTasksQueueLength() {
         return Uni.createFrom().emitter(emitter -> {
             try {
-                QueueName queueName = QueueName.of(projectId, locationId, queueId);
+                QueueName queueName = QueueName.of(config.getGcpProjectId(), config.getGcpLocation(), config.getQueueName());
                 var response = cloudTasksClient.listTasks(queueName);
                 int taskCount = 0;
                 for (var task : response.iterateAll()) {
@@ -160,12 +145,12 @@ public class AdminStatsController {
 
     private Uni<Integer> getRabbitMqQueueLength() {
         String url = String.format("http://%s:%d/api/queues/%%2F/chat-requests",
-            rabbitMqHost, rabbitMqManagementPort);
+            config.getRabbitmqHost(), config.getRabbitmqPort());
         HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create(url))
             .header("Authorization", "Basic " +
                 java.util.Base64.getEncoder().encodeToString(
-                    (rabbitMqUsername + ":" + rabbitMqPassword).getBytes()))
+                    (config.getRabbitmqUsername() + ":" + config.getRabbitmqPassword()).getBytes()))
             .GET()
             .build();
 
@@ -195,7 +180,7 @@ public class AdminStatsController {
 
     private boolean checkGoogleCloudTasks() {
         try {
-            QueueName queueName = QueueName.of(projectId, locationId, queueId);
+            QueueName queueName = QueueName.of(config.getGcpProjectId(), config.getGcpLocation(), config.getQueueName());
             cloudTasksClient.getQueue(queueName);
             return true;
         } catch (Exception e) {
@@ -207,10 +192,10 @@ public class AdminStatsController {
     private boolean checkRabbitMq() {
         try {
             ConnectionFactory factory = new ConnectionFactory();
-            factory.setHost(rabbitMqHost);
-            factory.setPort(rabbitMqPort);
-            factory.setUsername(rabbitMqUsername);
-            factory.setPassword(rabbitMqPassword);
+            factory.setHost(config.getRabbitmqHost());
+            factory.setPort(config.getRabbitmqPort());
+            factory.setUsername(config.getRabbitmqUsername());
+            factory.setPassword(config.getRabbitmqPassword());
             Connection connection = factory.newConnection();
             connection.close();
             return true;

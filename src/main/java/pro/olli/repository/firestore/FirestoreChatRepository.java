@@ -8,6 +8,7 @@ import com.google.cloud.firestore.FieldValue;
 import com.google.cloud.firestore.Firestore;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.jboss.logging.Logger;
 import pro.olli.ai.ChatMessage;
@@ -19,13 +20,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@ApplicationScoped
-@Named("firestore-chat")
 public class FirestoreChatRepository implements ChatRepository {
 
     private static final Logger LOG = Logger.getLogger(FirestoreChatRepository.class);
     private final Firestore firestore;
 
+    @Inject
     public FirestoreChatRepository(Firestore firestore) {
         this.firestore = firestore;
     }

@@ -29,7 +29,6 @@ import java.util.List;
  * This implementation is lightweight and efficient.
  */
 @Deprecated
-@ApplicationScoped
 public class OllamaQueryService implements QueryService {
 
     private static final Logger LOG = Logger.getLogger(OllamaQueryService.class);
@@ -152,7 +151,7 @@ public class OllamaQueryService implements QueryService {
                             AppException.ErrorType.EXTERNAL_SERVICE_ERROR);
                     }
 
-                    LOG.infof("Generated query response with direct API: %s",
+                    LOG.infof("Generated query response with original API: %s",
                         textResponse.length() > 100 ? textResponse.substring(0, 100) + "..." : textResponse);
                     return textResponse;
                 } else {

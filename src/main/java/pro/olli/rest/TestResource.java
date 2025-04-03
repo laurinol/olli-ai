@@ -67,11 +67,9 @@ public class TestResource {
     private static final Logger LOG = Logger.getLogger(TestResource.class);
 
     @Inject
-    @Factory
     UserRepository userRepository;
 
     @Inject
-    @Named("mongodb-sync") 
     SyncRepository syncRepository;
 
     @Inject
@@ -87,7 +85,6 @@ public class TestResource {
     MongoClient mongoClient;
 
     @Inject
-    @AiConfiguredService
     EmbeddingService embeddingService;
 
     @Inject
@@ -1424,7 +1421,7 @@ public class TestResource {
     public Uni<Response> storeDocumentIntegration(DocumentRequest request) {
         return storeDocument(request);
     }
-    
+
     /**
      * Integration endpoint for RAG query
      */
@@ -1435,7 +1432,7 @@ public class TestResource {
     public Uni<Response> queryIntegration(QueryRequest request) {
         return query(request);
     }
-    
+
     /**
      * Provides an auth token for E2E tests
      */
@@ -1737,6 +1734,50 @@ public class TestResource {
 
         public List<ChatMessage> getHistory() { return history; }
         public void setHistory(List<ChatMessage> history) { this.history = history; }
+    }
+    
+    /**
+     * Model for setting system properties
+     */
+    public static class SystemPropertyRequest {
+        private String key;
+        private String value;
+        
+        public String getKey() { return key; }
+        public void setKey(String key) { this.key = key; }
+        
+        public String getValue() { return value; }
+        public void setValue(String value) { this.value = value; }
+    }
+    
+    /**
+     * Test endpoint for setting system properties
+     */
+    @POST
+    @Path("/set-property")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response setSystemProperty(SystemPropertyRequest request) {
+        if (request.getKey() == null || request.getKey().trim().isEmpty()) {
+            return Response.status(400)
+                .entity(Map.of("error", "Property key is required"))
+                .build();
+        }
+        
+        if (request.getValue() == null) {
+            return Response.status(400)
+                .entity(Map.of("error", "Property value is required"))
+                .build();
+        }
+        
+        LOG.infof("Setting system property: %s = %s", request.getKey(), request.getValue());
+        System.setProperty(request.getKey(), request.getValue());
+        
+        return Response.ok(Map.of(
+            "success", true,
+            "key", request.getKey(),
+            "value", request.getValue()
+        )).build();
     }
 
     /**

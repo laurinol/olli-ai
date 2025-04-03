@@ -15,7 +15,6 @@ import ai.djl.translate.TranslatorContext;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.io.File;
 import java.nio.file.Paths;
@@ -25,7 +24,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
@@ -42,7 +40,6 @@ import pro.olli.core.resilience.exception.AppException;
  * Implementation of EmbeddingService that uses ONNX Runtime with DJL for local embedding generation.
  * This avoids API calls to external services and can run completely locally.
  */
-@ApplicationScoped
 public class OnnxEmbeddingService implements EmbeddingService {
 
     private static final Logger LOG = Logger.getLogger(OnnxEmbeddingService.class);

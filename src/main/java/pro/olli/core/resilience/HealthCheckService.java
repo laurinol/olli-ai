@@ -42,7 +42,7 @@ public class HealthCheckService {
     public HealthCheckService(
             CircuitBreakerMaintenance circuitBreakerMaintenance,
             Firestore firestore,
-            @AiConfiguredService EmbeddingService embeddingService,
+            EmbeddingService embeddingService,
             ConnectorFactory connectorFactory) {
         this.circuitBreakerMaintenance = circuitBreakerMaintenance;
         this.firestore = firestore;
@@ -186,16 +186,16 @@ public class HealthCheckService {
             // Simple embedding generation test to check service health
             if (embeddingService != null) {
                 LOG.infof("Checking embedding service health with simple embedding generation test");
-                
+
                 // Generate a small embedding to verify the service is responding
                 List<Float> embedding = embeddingService.generateEmbedding("health check test")
                     .await().atMost(java.time.Duration.ofSeconds(5));
-                
+
                 boolean isHealthy = embedding != null && !embedding.isEmpty();
-                
-                LOG.infof("Embedding service health check result: %s (vector size: %d)", 
+
+                LOG.infof("Embedding service health check result: %s (vector size: %d)",
                     isHealthy, isHealthy ? embedding.size() : 0);
-                
+
                 return isHealthy;
             } else {
                 LOG.warn("Embedding service not available, skipping health check");
