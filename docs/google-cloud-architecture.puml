@@ -1,0 +1,205 @@
+@startuml Google Cloud Architecture for Olli AI
+
+' Using standard PlantUML components
+skinparam componentStyle rectangle
+skinparam monochrome false
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+skinparam linetype ortho
+
+' Custom styling for Google Cloud components
+!define GCPColor #4285F4
+!define RuntimeColor #4285F4
+!define StorageColor #34A853
+!define AIColor #FBBC05
+!define NetworkingColor #4285F4
+!define SecurityColor #EA4335
+!define DevOpsColor #999999
+
+title Olli AI - Google Cloud Architecture
+
+' Define actors
+actor "End User" as endUser
+actor "Developer" as developer
+
+' External systems
+component "SendGrid\n(Email Service)" as emailService #FFF3E0
+component "Stripe\n(Payment Gateway)" as paymentService #FFF3E0
+component "External Storage\nProviders" as externalStorage #FFF3E0
+
+' Google Cloud Platform boundary
+rectangle "Google Cloud Platform" {
+    ' Networking
+    component "Global Load Balancer" as loadBalancer <<networking>>
+    component "Cloud CDN" as cdn <<networking>>
+    component "Cloud Armor\n(WAF)" as cloudArmor <<security>>
+    
+    ' Frontend
+    rectangle "Frontend Layer" {
+        component "Customer Web App\n(Cloud Storage)" as staticSite #StorageColor
+        component "Admin Web App\n(Cloud Run)" as adminApp #RuntimeColor
+    }
+    
+    ' Backend Services
+    rectangle "Backend Services" {
+        component "API Gateway\n(Cloud Run)" as apiGateway #RuntimeColor
+        
+        ' Microservices
+        component "Authentication Service\n(Cloud Run)" as authService #RuntimeColor
+        component "Team Management Service\n(Cloud Run)" as teamService #RuntimeColor
+        component "Sync Service\n(Cloud Run)" as syncService #RuntimeColor
+        component "Search Service\n(Cloud Run)" as searchService #RuntimeColor
+        component "Billing Service\n(Cloud Run)" as billingService #RuntimeColor
+        component "Admin Service\n(Cloud Run)" as adminService #RuntimeColor
+        
+        ' Async Processing
+        component "Worker Service\n(Cloud Run)" as workerService #RuntimeColor
+        component "Cloud Tasks" as cloudTasks #RuntimeColor
+        component "Cloud Pub/Sub" as pubSub #RuntimeColor
+    }
+    
+    ' Data Storage
+    rectangle "Data Storage Layer" {
+        database "Firestore" as firestore #StorageColor
+        database "Cloud Memorystore\n(Redis)" as redis #StorageColor
+        database "Cloud Storage" as cloudStorage #StorageColor
+    }
+    
+    ' AI & ML
+    rectangle "AI & ML Layer" {
+        component "Vertex AI" as vertexAI #AIColor
+        component "Document AI" as documentAI #AIColor
+        component "Vector Search" as vectorSearch #AIColor
+    }
+    
+    ' DevOps
+    rectangle "DevOps & Operations" {
+        component "Cloud Build\n(CI/CD)" as cloudBuild #DevOpsColor
+        component "Cloud Deploy" as cloudDeploy #DevOpsColor
+        component "Cloud Logging" as logging #DevOpsColor
+        component "Cloud Monitoring" as monitoring #DevOpsColor
+    }
+    
+    ' Security
+    rectangle "Security" {
+        component "Identity & Access\n(IAM)" as iam #SecurityColor
+        component "Secret Manager" as secretManager #SecurityColor
+        component "Security Scanner" as securityScanner #SecurityColor
+    }
+}
+
+' External connections
+endUser --> loadBalancer : HTTPS
+developer --> cloudBuild : git push
+authService --> emailService : Send emails
+billingService --> paymentService : Process payments
+syncService <--> externalStorage : Sync files
+
+' Frontend and networking connections
+loadBalancer --> cloudArmor : WAF protection
+cloudArmor --> cdn : Static content
+cloudArmor --> apiGateway : API requests
+cdn --> staticSite : Deliver content
+
+' Frontend to Backend connections
+staticSite --> apiGateway : HTTPS/JSON
+adminApp --> apiGateway : HTTPS/JSON
+
+' API Gateway to Services connections
+apiGateway --> authService : Auth requests
+apiGateway --> teamService : Team management
+apiGateway --> syncService : Sync operations
+apiGateway --> searchService : Search queries
+apiGateway --> billingService : Billing operations
+apiGateway --> adminService : Admin operations
+
+' Service to service connections
+authService <--> teamService : Validate users
+syncService --> searchService : Index content
+billingService --> syncService : Usage limits
+syncService --> cloudTasks : Queue tasks
+cloudTasks --> workerService : Process tasks
+pubSub <--> workerService : Event messaging
+authService ..> pubSub : Publish events
+teamService ..> pubSub : Publish events
+syncService ..> pubSub : Publish events
+searchService ..> pubSub : Publish events
+billingService ..> pubSub : Publish events
+adminService ..> pubSub : Publish events
+
+' Database connections
+authService --> firestore : Store data
+teamService --> firestore : Store data
+syncService --> firestore : Store data
+searchService --> firestore : Store data
+billingService --> firestore : Store data
+adminService --> firestore : Store data
+
+authService --> redis : Cache data
+teamService --> redis : Cache data
+syncService --> redis : Cache data
+searchService --> redis : Cache data
+billingService --> redis : Cache data
+
+syncService --> cloudStorage : Store files
+workerService --> cloudStorage : Process files
+
+' AI connections
+searchService --> vertexAI : Embeddings & LLM
+searchService --> vectorSearch : Semantic search
+syncService --> documentAI : Document processing
+
+' DevOps connections
+cloudBuild --> cloudDeploy : Deliver artifacts
+cloudDeploy --> authService : Deploy
+cloudDeploy --> teamService : Deploy
+cloudDeploy --> syncService : Deploy
+cloudDeploy --> searchService : Deploy
+cloudDeploy --> billingService : Deploy
+cloudDeploy --> adminService : Deploy
+cloudDeploy --> workerService : Deploy
+
+' Services to operations connections
+authService ..> logging : Log data
+teamService ..> logging : Log data
+syncService ..> logging : Log data
+searchService ..> logging : Log data
+billingService ..> logging : Log data
+adminService ..> logging : Log data
+workerService ..> logging : Log data
+
+authService ..> monitoring : Report metrics
+teamService ..> monitoring : Report metrics
+syncService ..> monitoring : Report metrics
+searchService ..> monitoring : Report metrics
+billingService ..> monitoring : Report metrics
+adminService ..> monitoring : Report metrics
+workerService ..> monitoring : Report metrics
+
+' Security connections
+authService ..> iam : Authenticate
+teamService ..> iam : Authenticate
+syncService ..> iam : Authenticate
+searchService ..> iam : Authenticate
+billingService ..> iam : Authenticate
+adminService ..> iam : Authenticate
+workerService ..> iam : Authenticate
+
+authService ..> secretManager : Get secrets
+teamService ..> secretManager : Get secrets
+syncService ..> secretManager : Get secrets
+searchService ..> secretManager : Get secrets
+billingService ..> secretManager : Get secrets
+adminService ..> secretManager : Get secrets
+workerService ..> secretManager : Get secrets
+
+securityScanner --> authService : Scan
+securityScanner --> teamService : Scan
+securityScanner --> syncService : Scan
+securityScanner --> searchService : Scan
+securityScanner --> billingService : Scan
+securityScanner --> adminService : Scan
+securityScanner --> workerService : Scan
+
+@enduml

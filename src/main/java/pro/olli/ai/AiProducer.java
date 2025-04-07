@@ -13,6 +13,7 @@ import org.jboss.logging.Logger;
 import pro.olli.ai.ollama.EnhancedRAGOllamaQueryService;
 import pro.olli.ai.ollama.RAGOllamaQueryService;
 import pro.olli.ai.onnx.OnnxEmbeddingService;
+import pro.olli.ai.tokenizer.BytePairEncodingTokenizer;
 import pro.olli.ai.vertexai.VertexAiEmbeddingService;
 import pro.olli.ai.vertexai.VertexAiQueryService;
 import pro.olli.config.AppConfig;
@@ -91,13 +92,16 @@ public class AiProducer {
                 // Use the injected SyncRepository (will be memory repository when using RAG)
                 LOG.info("Using injected SyncRepository for RAG: " + syncRepository.getClass().getName());
 
-                if ("enhanced".equalsIgnoreCase(ragImpl)) {
-                    LOG.info("Using EnhancedRAGOllamaQueryService");
-                    return new EnhancedRAGOllamaQueryService(config, vertx, produceEmbeddingService(config), syncRepository);
-                } else {
+                //if ("enhanced".equalsIgnoreCase(ragImpl)) {
+                    // Create a new tokenizer instance directly
+                    BytePairEncodingTokenizer tokenizer = new BytePairEncodingTokenizer(config);
+                    tokenizer.initialize(); // Manually initialize
+                    LOG.info("Using EnhancedRAGOllamaQueryService with manually initialized tokenizer");
+                    return new EnhancedRAGOllamaQueryService(config, vertx, produceEmbeddingService(config), syncRepository, tokenizer);
+                /*} else {
                     LOG.info("Using RAGOllamaQueryService");
                     return new RAGOllamaQueryService(config, vertx, produceEmbeddingService(config), syncRepository);
-                }
+                }*/
             /*} else {
                 // Standard implementation
                 boolean useDirectImpl = Boolean.parseBoolean(System.getProperty("ollama.use.direct", "true"));

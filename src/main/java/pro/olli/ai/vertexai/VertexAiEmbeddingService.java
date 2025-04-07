@@ -14,25 +14,19 @@ import com.google.protobuf.util.JsonFormat;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
+import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
 import java.util.Random;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import java.util.stream.Collectors;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
-
-import java.io.IOException;
-import java.util.Collections;
-import java.util.List;
-import java.util.stream.Collectors;
 import pro.olli.ai.EmbeddingService;
 import pro.olli.config.AppConfig;
 import pro.olli.core.metrics.Timed;
-
-import jakarta.enterprise.context.ApplicationScoped;
-import pro.olli.ai.AiConfiguredService;
-import pro.olli.ai.AiImplementationType;
 
 public class VertexAiEmbeddingService implements EmbeddingService {
 

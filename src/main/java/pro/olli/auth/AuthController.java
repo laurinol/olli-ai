@@ -72,7 +72,7 @@ public class AuthController {
                 userRepository.saveVerification(verification)
                     .subscribe().with(
                         success -> {
-                            String verificationLink = String.format("%s/auth/register?token=%s", config.getAppDomain(),
+                            String verificationLink = String.format("%s/auth/complete-invitation?token=%s", config.getAppDomain(),
                                 token);
                             // Create the email with the verification link
                             Mail mail = Mail.withText(inviteRequest.email,
@@ -147,11 +147,11 @@ public class AuthController {
     }
 
     @POST
-    @Path("/register")
+    @Path("/complete-invitation")
     @Produces(MediaType.APPLICATION_JSON)
-    public Uni<Response> register(RegisterRequest registerRequest) {
-        LOG.infof("Registration request received for email: %s with token: %s",
-            registerRequest.email, registerRequest.token);
+    public Uni<Response> completeInvitation(CompleteInvitationRequest request) {
+        LOG.infof("Invitation completion request received for email: %s with token: %s",
+            request.email, request.token);
 
         // Use AtomicReference to hold values we need across steps
         AtomicReference<String> userId = new AtomicReference<>();
@@ -161,11 +161,11 @@ public class AuthController {
         return Uni.createFrom().emitter(emitter -> {
             try {
                 // Step 1: Find the verification
-                userRepository.getVerification(registerRequest.token)
+                userRepository.getVerification(request.token)
                     .subscribe().with(
                         verificationOpt -> {
                             if (verificationOpt.isEmpty()) {
-                                LOG.warnf("Invalid token: %s", registerRequest.token);
+                                LOG.warnf("Invalid token: %s", request.token);
                                 emitter.complete(Response.status(400)
                                     .entity(Map.of("error", "Invalid or expired token"))
                                     .build());
@@ -183,9 +183,9 @@ public class AuthController {
                             LOG.infof("Found verification for email: %s, business: %s", verificationEmail,
                                 verificationBusinessId);
 
-                            if (!verificationEmail.equals(registerRequest.email) || Instant.now().isAfter(expiresAt)) {
+                            if (!verificationEmail.equals(request.email) || Instant.now().isAfter(expiresAt)) {
                                 LOG.warnf("Verification email mismatch or expired. Expected: %s, Got: %s, Expired: %s",
-                                    verificationEmail, registerRequest.email, Instant.now().isAfter(expiresAt));
+                                    verificationEmail, request.email, Instant.now().isAfter(expiresAt));
                                 emitter.complete(Response.status(400)
                                     .entity(Map.of("error", "Invalid or expired token"))
                                     .build());
@@ -196,14 +196,14 @@ public class AuthController {
                             String newUserId = generateUserId();
                             userId.set(newUserId);
 
-                            String hashedPassword = hashPassword(registerRequest.password);
+                            String hashedPassword = hashPassword(request.password);
                             Map<String, Object> metadata = new HashMap<>();
                             metadata.put("businessId", verificationBusinessId);
                             metadata.put("hashedPassword", hashedPassword);
 
                             User user = new User(
                                 newUserId,
-                                registerRequest.email,
+                                request.email,
                                 null, // No name provided in registration form
                                 null, // No avatar URL yet
                                 Instant.now(),
@@ -212,7 +212,7 @@ public class AuthController {
                                 null // Never store raw password in the model
                             );
 
-                            LOG.infof("STEP 1: Created user object: id=%s, email=%s", newUserId, registerRequest.email);
+                            LOG.infof("STEP 1: Created user object: id=%s, email=%s", newUserId, request.email);
 
                             // Step 2: Save the user
                             userRepository.saveUser(user).subscribe().with(
@@ -236,8 +236,8 @@ public class AuthController {
                                                             LOG.infof("STEP 3a: Business created: %s",
                                                                 verificationBusinessId);
                                                             createBusinessUserAndFinishWithVerification(
-                                                                newUserId, verificationBusinessId, registerRequest.email,
-                                                                verification, registerRequest, emitter);
+                                                                newUserId, verificationBusinessId, request.email,
+                                                                verification, request, emitter);
                                                         },
                                                         err -> {
                                                             LOG.errorf("Failed to save business: %s", err.getMessage());
@@ -251,8 +251,8 @@ public class AuthController {
                                                     LOG.infof("STEP 3b: Business already exists: %s",
                                                         verificationBusinessId);
                                                     createBusinessUserAndFinishWithVerification(
-                                                        newUserId, verificationBusinessId, registerRequest.email,
-                                                        verification, registerRequest, emitter);
+                                                        newUserId, verificationBusinessId, request.email,
+                                                        verification, request, emitter);
                                                 }
                                             } catch (Exception e) {
                                                 LOG.errorf("Error in business step: %s", e.getMessage(), e);
@@ -285,16 +285,184 @@ public class AuthController {
                         }
                     );
             } catch (Exception e) {
-                LOG.errorf("Unexpected error during registration: %s", e.getMessage(), e);
+                LOG.errorf("Unexpected error during invitation completion: %s", e.getMessage(), e);
                 emitter.complete(Response.status(500)
-                    .entity(Map.of("error", "Registration failed: " + e.getMessage()))
+                    .entity(Map.of("error", "Invitation completion failed: " + e.getMessage()))
                     .build());
             }
         });
     }
+    
+    @POST
+    @Path("/register")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> register(RegisterRequest registerRequest) {
+        LOG.infof("Self-registration request received for email: %s", registerRequest.email);
+        
+        // Validate email format
+        if (registerRequest.email == null || !registerRequest.email.matches("^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$")) {
+            LOG.warnf("Invalid email format: %s", registerRequest.email);
+            return Uni.createFrom().item(Response.status(400)
+                .entity(Map.of("error", "Invalid email format"))
+                .build());
+        }
+        
+        // Validate password strength (minimum 8 characters)
+        if (registerRequest.password == null || registerRequest.password.length() < 8) {
+            LOG.warnf("Password too weak for user: %s", registerRequest.email);
+            return Uni.createFrom().item(Response.status(400)
+                .entity(Map.of("error", "Password must be at least 8 characters"))
+                .build());
+        }
+        
+        // Check if user already exists
+        return userRepository.getUser(registerRequest.email)
+            .flatMap(existingUser -> {
+                if (existingUser.isPresent()) {
+                    LOG.warnf("User already exists with email: %s", registerRequest.email);
+                    return Uni.createFrom().item(Response.status(400)
+                        .entity(Map.of("error", "User with this email already exists"))
+                        .build());
+                }
+                
+                // Generate a verification token
+                String token = generateTemporaryToken();
+                String businessId = "user-" + token.substring(0, 8); // Default business ID for self-registration
+                
+                // Create verification record
+                Verification verification = new Verification(
+                    token,
+                    businessId,
+                    registerRequest.email,
+                    "user" // Default role
+                );
+                
+                // Create user with unverified status
+                String userId = generateUserId();
+                String hashedPassword = hashPassword(registerRequest.password);
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("businessId", businessId);
+                metadata.put("hashedPassword", hashedPassword);
+                metadata.put("verified", false); // User starts as unverified
+                
+                User user = new User(
+                    userId,
+                    registerRequest.email,
+                    null, // No name provided yet
+                    null, // No avatar URL yet
+                    Instant.now(),
+                    Instant.now(),
+                    metadata,
+                    null // Never store raw password
+                );
+                
+                // Save verification record
+                return userRepository.saveVerification(verification)
+                    .flatMap(v -> {
+                        // Send verification email
+                        String verificationLink = String.format("%s/auth/verify?token=%s", config.getAppDomain(), token);
+                        Mail mail = Mail.withText(registerRequest.email,
+                            "Verify Your Email with Olli-AI",
+                            "Click here to verify your email: " + verificationLink + "\nExpires in 48 hours.");
+                        
+                        // Send email (don't wait for result)
+                        mailer.send(mail)
+                            .subscribe().with(
+                                result -> LOG.infof("Verification email sent to %s", registerRequest.email),
+                                error -> LOG.errorf("Failed to send verification email: %s", error.getMessage())
+                            );
+                        
+                        // Save the user
+                        return userRepository.saveUser(user)
+                            .map(success -> Response.ok(Map.of(
+                                "message", "Registration successful. Please check your email to verify your account.",
+                                "email", registerRequest.email
+                            )).build());
+                    });
+            });
+    }
+    
+    @POST
+    @Path("/verify")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> verify(VerifyRequest verifyRequest) {
+        LOG.infof("Verification request received with token: %s", verifyRequest.token);
+        
+        return userRepository.getVerification(verifyRequest.token)
+            .flatMap(verificationOpt -> {
+                if (verificationOpt.isEmpty()) {
+                    LOG.warnf("Invalid verification token: %s", verifyRequest.token);
+                    return Uni.createFrom().item(Response.status(400)
+                        .entity(Map.of("error", "Invalid or expired verification token"))
+                        .build());
+                }
+                
+                Verification verification = verificationOpt.get();
+                Instant expiresAt = verification.getExpiresAt();
+                
+                if (Instant.now().isAfter(expiresAt)) {
+                    LOG.warnf("Expired verification token: %s", verifyRequest.token);
+                    return Uni.createFrom().item(Response.status(400)
+                        .entity(Map.of("error", "Verification token has expired"))
+                        .build());
+                }
+                
+                String email = verification.getEmail();
+                
+                // Mark verification as verified
+                Verification verifiedObj = verification.withVerified();
+                
+                return userRepository.saveVerification(verifiedObj)
+                    .flatMap(v -> userRepository.getUser(email)
+                        .flatMap(userOpt -> {
+                            if (userOpt.isEmpty()) {
+                                LOG.warnf("User not found for email: %s during verification", email);
+                                return Uni.createFrom().item(Response.status(400)
+                                    .entity(Map.of("error", "User not found"))
+                                    .build());
+                            }
+                            
+                            User user = userOpt.get();
+                            Map<String, Object> metadata = user.getMetadata();
+                            
+                            if (metadata == null) {
+                                metadata = new HashMap<>();
+                            }
+                            
+                            // Update verified status
+                            metadata.put("verified", true);
+                            User updatedUser = new User(
+                                user.getId(),
+                                user.getEmail(),
+                                user.getName(),
+                                user.getAvatarUrl(),
+                                user.getCreatedAt(),
+                                Instant.now(),
+                                metadata,
+                                null
+                            );
+                            
+                            return userRepository.saveUser(updatedUser)
+                                .map(success -> {
+                                    // Issue JWT for automatic login
+                                    String jwt = issueJwtToken(user.getId());
+                                    
+                                    return Response.ok(Map.of(
+                                        "message", "Email verified successfully",
+                                        "email", email,
+                                        "token", jwt,
+                                        "userId", user.getId()
+                                    ))
+                                    .header("Authorization", "Bearer " + jwt)
+                                    .build();
+                                });
+                        })
+                    );
+            });
+    }
 
     private void createBusinessUserAndFinishWithVerification(String userId, String businessId, String email,
-        Verification verification, RegisterRequest registerRequest,
+        Verification verification, CompleteInvitationRequest request,
         io.smallrye.mutiny.subscription.UniEmitter<? super Response> emitter) {
         LOG.infof("STEP 4: Creating business user association for user %s in business %s", userId, businessId);
 
@@ -417,15 +585,22 @@ public class AuthController {
     }
 
     public static class LoginRequest {
-
         public String email;
         public String password;
     }
 
     public static class RegisterRequest {
-
         public String email;
         public String password;
+    }
+    
+    public static class CompleteInvitationRequest {
+        public String email;
+        public String password;
+        public String token;
+    }
+    
+    public static class VerifyRequest {
         public String token;
     }
 }

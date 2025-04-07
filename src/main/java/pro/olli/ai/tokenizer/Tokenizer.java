@@ -23,7 +23,19 @@ public interface Tokenizer {
      * @deprecated This method uses a simplified tokenization approach and returns String tokens instead of Integer IDs.
      * For BPE tokenization returning Integer token IDs, use {@link BytePairEncodingTokenizer#tokenize(String)} instead.
      */
+    @Deprecated
     static List<String> tokenize(String text) {
+        return simpleTokenize(text);
+    }
+    
+    /**
+     * Non-deprecated replacement for tokenize() that uses the same implementation.
+     * This simple tokenizer splits text into tokens based on a regex pattern.
+     *
+     * @param text Text to tokenize
+     * @return List of string tokens
+     */
+    static List<String> simpleTokenize(String text) {
         // Simple regex tokenization as fallback
         if (text == null || text.isEmpty()) {
             return new ArrayList<>();

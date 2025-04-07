@@ -5,9 +5,9 @@ package pro.olli.ai.tokenizer;
 
 import ai.djl.huggingface.tokenizers.HuggingFaceTokenizer;
 import ai.djl.huggingface.tokenizers.Encoding;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.nio.file.Paths;
@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import pro.olli.config.AppConfig;
 
 /**
  * Tokenizer implementation using Byte Pair Encoding (BPE) for accurate token calculations.
@@ -24,39 +25,108 @@ import java.util.concurrent.ConcurrentHashMap;
 @ApplicationScoped
 public class BytePairEncodingTokenizer implements Tokenizer {
     private static final Logger LOG = Logger.getLogger(BytePairEncodingTokenizer.class);
-    private static BytePairEncodingTokenizer instance;
-    private final HuggingFaceTokenizer tokenizer;
+
+    private final AppConfig config;
+    private HuggingFaceTokenizer tokenizer;
     private final Map<String, Integer> tokenCountCache = new ConcurrentHashMap<>();
+    private boolean initialized = false;
 
     /**
-     * Constructor for the BytePairEncodingTokenizer.
-     *
-     * @param tokenizerPath The path to the HuggingFace tokenizer model
+     * Default constructor required for CDI
+     * Attempts basic initialization with default paths
      */
-    @Inject
-    public BytePairEncodingTokenizer(
-            @ConfigProperty(name = "ai.tokenizer.path", defaultValue = "./tokenizer") String tokenizerPath) {
+    public BytePairEncodingTokenizer() {
+        LOG.debug("Default constructor called - attempting basic initialization");
+        this.config = null;
+
+        // Try to initialize with resources from classpath
         try {
-            this.tokenizer = HuggingFaceTokenizer.newInstance(Paths.get(tokenizerPath));
-            LOG.info("BytePairEncodingTokenizer initialized with model from: " + tokenizerPath);
+            // Get resource from classpath
+            java.net.URL resource = Thread.currentThread().getContextClassLoader().getResource("models/tokenizer.json");
+            if (resource != null) {
+                String path = resource.getPath();
+                LOG.info("Attempting initialization with resource path: " + path);
+                this.tokenizer = HuggingFaceTokenizer.newInstance(java.nio.file.Paths.get(java.net.URI.create(resource.toString())));
+                this.initialized = true;
+                LOG.info("Resource-based initialization successful");
+            } else {
+                LOG.warn("Resource models/tokenizer.json not found on classpath");
+            }
         } catch (Exception e) {
-            LOG.error("Failed to initialize BytePairEncodingTokenizer", e);
-            throw new RuntimeException("Failed to initialize tokenizer", e);
+            LOG.warn("Resource-based initialization failed, will use string-based tokenization", e);
         }
-        instance = this;
     }
 
     /**
-     * Gets the singleton instance of the tokenizer.
-     * Falls back to SimpleTokenizer if not initialized.
+     * Constructor for the BytePairEncodingTokenizer with configuration.
      *
-     * @return The tokenizer instance
+     * @param config The application configuration
      */
-    public static BytePairEncodingTokenizer getInstance() {
-        if (instance == null) {
-            LOG.warn("BytePairEncodingTokenizer not initialized, using fallback logic");
+    @Inject
+    public BytePairEncodingTokenizer(AppConfig config) {
+        LOG.debug("Injected constructor called");
+        this.config = config;
+    }
+
+    /**
+     * Initialize the tokenizer
+     */
+    @PostConstruct
+    public void initialize() {
+        // If already initialized, return
+        if (initialized && tokenizer != null) {
+            return;
         }
-        return instance;
+        
+        // First try to use config path if available
+        if (config != null) {
+            try {
+                String tokenPath = config.getAiTokenizerPath();
+                LOG.info("Initializing BytePairEncodingTokenizer with configured path: " + tokenPath);
+                
+                // Try to get it as a resource from classpath first
+                java.net.URL resource = Thread.currentThread().getContextClassLoader().getResource(tokenPath);
+                if (resource != null) {
+                    LOG.info("Using resource from classpath: " + resource);
+                    this.tokenizer = HuggingFaceTokenizer.newInstance(Paths.get(java.net.URI.create(resource.toString())));
+                    this.initialized = true;
+                    LOG.info("BytePairEncodingTokenizer successfully initialized from classpath resource");
+                    return;
+                }
+                
+                // Try with file path
+                java.io.File file = new java.io.File(tokenPath);
+                if (file.exists()) {
+                    LOG.info("Using file from path: " + file.getAbsolutePath());
+                    this.tokenizer = HuggingFaceTokenizer.newInstance(Paths.get(file.getAbsolutePath()));
+                    this.initialized = true;
+                    LOG.info("BytePairEncodingTokenizer successfully initialized from file");
+                    return;
+                }
+                
+                LOG.warn("Config path not found as resource or file: " + tokenPath);
+            } catch (Exception e) {
+                LOG.error("Failed to initialize tokenizer with config path", e);
+            }
+        }
+        
+        // Fallback to resource from classpath
+        try {
+            // Get default resource from classpath
+            java.net.URL resource = Thread.currentThread().getContextClassLoader().getResource("models/tokenizer.json");
+            if (resource != null) {
+                LOG.info("Fallback to default resource: " + resource);
+                this.tokenizer = HuggingFaceTokenizer.newInstance(Paths.get(java.net.URI.create(resource.toString())));
+                this.initialized = true;
+                LOG.info("BytePairEncodingTokenizer successfully initialized with default resource");
+                return;
+            }
+            LOG.warn("Default resource models/tokenizer.json not found");
+        } catch (Exception e) {
+            LOG.error("Failed to initialize tokenizer with default resource", e);
+        }
+        
+        LOG.warn("All tokenizer initialization attempts failed, will use fallback methods");
     }
 
     /**
@@ -70,6 +140,11 @@ public class BytePairEncodingTokenizer implements Tokenizer {
             return new ArrayList<>();
         }
 
+        if (!initialized || tokenizer == null) {
+            LOG.warn("Tokenizer not initialized, using fallback tokenization");
+            return fallbackTokenize(text);
+        }
+
         try {
             Encoding encoding = tokenizer.encode(text);
             long[] tokens = encoding.getIds();
@@ -80,34 +155,20 @@ public class BytePairEncodingTokenizer implements Tokenizer {
             return result;
         } catch (Exception e) {
             LOG.error("Error tokenizing text, using fallback string tokenization", e);
-            List<String> tokens = Tokenizer.tokenize(text);
-            List<Integer> result = new ArrayList<>(tokens.size());
-            for (String token : tokens) {
-                result.add(Math.abs(token.hashCode()) % 10000);
-            }
-            return result;
+            return fallbackTokenize(text);
         }
     }
 
     /**
-     * Static method for compatibility with SimpleTokenizer's API.
-     *
-     * @param text The text to tokenize
-     * @return A list of token IDs
+     * Fallback tokenization method using simple string tokenization
      */
-    public static List<Integer> getIntegerTokenIds(String text) {
-        if (instance != null) {
-            return instance.tokenize(text);
-        } else {
-            LOG.warn("BytePairEncodingTokenizer not initialized, using fallback approach");
-            // Create simple token IDs from strings
-            List<String> tokens = Tokenizer.tokenize(text);
-            List<Integer> result = new ArrayList<>(tokens.size());
-            for (String token : tokens) {
-                result.add(Math.abs(token.hashCode()) % 10000);
-            }
-            return result;
+    private List<Integer> fallbackTokenize(String text) {
+        List<String> tokens = Tokenizer.simpleTokenize(text);
+        List<Integer> result = new ArrayList<>(tokens.size());
+        for (String token : tokens) {
+            result.add(Math.abs(token.hashCode()) % 10000);
         }
+        return result;
     }
 
     /**
@@ -132,27 +193,17 @@ public class BytePairEncodingTokenizer implements Tokenizer {
      * @return The token count
      */
     private int calculateTokenCount(String text) {
+        if (!initialized || tokenizer == null) {
+            LOG.warn("Tokenizer not initialized, using fallback token counting");
+            return Tokenizer.simpleTokenize(text).size();
+        }
+
         try {
             Encoding encoding = tokenizer.encode(text);
             return encoding.getIds().length;
         } catch (Exception e) {
             LOG.error("Error calculating token count, using fallback string tokenization", e);
-            return Tokenizer.tokenize(text).size();
-        }
-    }
-
-    /**
-     * Static method for estimating token count.
-     *
-     * @param text The text to count tokens for
-     * @return The estimated token count
-     */
-    public static int getTokenCount(String text) {
-        if (instance != null) {
-            return instance.estimateTokenCount(text);
-        } else {
-            LOG.warn("BytePairEncodingTokenizer not initialized, using fallback string tokenization");
-            return Tokenizer.tokenize(text).size();
+            return Tokenizer.simpleTokenize(text).size();
         }
     }
 
@@ -168,6 +219,11 @@ public class BytePairEncodingTokenizer implements Tokenizer {
             return "";
         }
 
+        if (!initialized || tokenizer == null) {
+            LOG.warn("Tokenizer not initialized, using fallback truncation");
+            return fallbackTruncateToTokenLimit(text, maxTokens);
+        }
+
         try {
             Encoding encoding = tokenizer.encode(text);
             long[] tokens = encoding.getIds();
@@ -180,37 +236,21 @@ public class BytePairEncodingTokenizer implements Tokenizer {
             return tokenizer.decode(truncatedTokens);
         } catch (Exception e) {
             LOG.error("Error truncating text, using fallback approach", e);
-
-            // Fallback: simple character-based approximation
-            int approxCharsPerToken = 4;
-            int estimatedChars = maxTokens * approxCharsPerToken;
-            if (text.length() <= estimatedChars) {
-                return text;
-            }
-            return text.substring(0, Math.min(text.length(), estimatedChars)) + "...";
+            return fallbackTruncateToTokenLimit(text, maxTokens);
         }
     }
 
     /**
-     * Static method for truncating text to token limit.
-     *
-     * @param text The text to truncate
-     * @param maxTokens The maximum number of tokens allowed
-     * @return The truncated text
+     * Fallback method for truncating text by character approximation
      */
-    public static String truncateText(String text, int maxTokens) {
-        if (instance != null) {
-            return instance.truncateToTokenLimit(text, maxTokens);
-        } else {
-            LOG.warn("BytePairEncodingTokenizer not initialized, using fallback approach");
-            // Simple character-based approximation
-            int approxCharsPerToken = 4;
-            int estimatedChars = maxTokens * approxCharsPerToken;
-            if (text.length() <= estimatedChars) {
-                return text;
-            }
-            return text.substring(0, Math.min(text.length(), estimatedChars)) + "...";
+    private String fallbackTruncateToTokenLimit(String text, int maxTokens) {
+        // Simple character-based approximation
+        int approxCharsPerToken = 4;
+        int estimatedChars = maxTokens * approxCharsPerToken;
+        if (text.length() <= estimatedChars) {
+            return text;
         }
+        return text.substring(0, Math.min(text.length(), estimatedChars)) + "...";
     }
 
     /**
@@ -220,12 +260,23 @@ public class BytePairEncodingTokenizer implements Tokenizer {
      * @return An array of token IDs
      */
     public long[] getTokenIds(String text) {
+        if (!initialized || tokenizer == null) {
+            LOG.warn("Tokenizer not initialized, using fallback token ID generation");
+            List<String> stringTokens = Tokenizer.simpleTokenize(text);
+            long[] result = new long[stringTokens.size()];
+            for (int i = 0; i < stringTokens.size(); i++) {
+                // Convert string tokens to token IDs (using hash code as a basic mapping)
+                result[i] = Math.abs(stringTokens.get(i).hashCode() % 10000);
+            }
+            return result;
+        }
+
         try {
             Encoding encoding = tokenizer.encode(text);
             return encoding.getIds();
         } catch (Exception e) {
             LOG.error("Error getting token IDs, using fallback approach", e);
-            List<String> stringTokens = Tokenizer.tokenize(text);
+            List<String> stringTokens = Tokenizer.simpleTokenize(text);
             long[] result = new long[stringTokens.size()];
             for (int i = 0; i < stringTokens.size(); i++) {
                 // Convert string tokens to token IDs (using hash code as a basic mapping)
@@ -242,12 +293,20 @@ public class BytePairEncodingTokenizer implements Tokenizer {
      * @return An array representing the attention mask
      */
     public long[] getAttentionMask(String text) {
+        if (!initialized || tokenizer == null) {
+            LOG.warn("Tokenizer not initialized, using fallback attention mask");
+            List<String> stringTokens = Tokenizer.simpleTokenize(text);
+            long[] attentionMask = new long[stringTokens.size()];
+            Arrays.fill(attentionMask, 1L);
+            return attentionMask;
+        }
+
         try {
             Encoding encoding = tokenizer.encode(text);
             return encoding.getAttentionMask();
         } catch (Exception e) {
             LOG.error("Error creating attention mask, using fallback approach", e);
-            List<String> stringTokens = Tokenizer.tokenize(text);
+            List<String> stringTokens = Tokenizer.simpleTokenize(text);
             long[] attentionMask = new long[stringTokens.size()];
             Arrays.fill(attentionMask, 1L);
             return attentionMask;
@@ -261,6 +320,11 @@ public class BytePairEncodingTokenizer implements Tokenizer {
      * @return The decoded text
      */
     public String detokenize(long[] tokenIds) {
+        if (!initialized || tokenizer == null) {
+            LOG.warn("Tokenizer not initialized, cannot detokenize");
+            return "";
+        }
+
         try {
             return tokenizer.decode(tokenIds);
         } catch (Exception e) {
@@ -270,11 +334,38 @@ public class BytePairEncodingTokenizer implements Tokenizer {
     }
 
     /**
+     * Checks if the tokenizer is properly initialized
+     */
+    public boolean isInitialized() {
+        return initialized && tokenizer != null;
+    }
+
+    /**
      * Gets the underlying HuggingFaceTokenizer.
      *
      * @return The HuggingFaceTokenizer instance
      */
     public HuggingFaceTokenizer getHuggingFaceTokenizer() {
         return tokenizer;
+    }
+
+    /**
+     * Static method for backward compatibility.
+     * Creates a temporary tokenizer to handle the call.
+     */
+    public static int getTokenCount(String text) {
+        LOG.info("Static getTokenCount called - creating temporary tokenizer");
+        BytePairEncodingTokenizer temp = new BytePairEncodingTokenizer();
+        return temp.estimateTokenCount(text);
+    }
+
+    /**
+     * Static method for backward compatibility.
+     * Creates a temporary tokenizer to handle the call.
+     */
+    public static String truncateText(String text, int maxTokens) {
+        LOG.info("Static truncateText called - creating temporary tokenizer");
+        BytePairEncodingTokenizer temp = new BytePairEncodingTokenizer();
+        return temp.truncateToTokenLimit(text, maxTokens);
     }
 }

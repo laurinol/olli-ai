@@ -45,7 +45,7 @@ public class DevJwtAuthMechanism implements HttpAuthenticationMechanism {
                 LOG.info("Authenticating dev token: " + token);
 
                 // For development, always use a consistent user ID to make tracking easier
-                String userId = "test-dev-user";
+                String userId = "test-user";
 
                 // Create a security identity with admin role
                 QuarkusSecurityIdentity identity = QuarkusSecurityIdentity.builder()

@@ -12,16 +12,13 @@ import com.mongodb.client.model.ReturnDocument;
 import com.mongodb.client.model.Updates;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
-import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.inject.Named;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.bson.Document;
 import org.bson.conversions.Bson;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
@@ -65,6 +62,8 @@ public class MongoSyncRepository implements SyncRepository {
     private MongoCollection<Document> getEmbeddingsCollection() {
         MongoCollection<Document> collection = mongoClient.getDatabase(config.getMongoDbName())
             .getCollection(EMBEDDINGS_COLLECTION);
+
+        LOG.debug("Mongo repository contains " + collection.countDocuments() + " stored document sets");
 
         // Ensure we have the indexes we need (only need to do this once, but MongoDB safely handles repeated calls)
         try {
@@ -215,8 +214,7 @@ public class MongoSyncRepository implements SyncRepository {
     @Timeout(value = 3, unit = ChronoUnit.SECONDS)
     @CircuitBreaker(requestVolumeThreshold = 5, failureRatio = 0.5, delay = 10000)
     @CircuitBreakerName("mongodb-vector-search")
-    public Uni<List<String>> findSimilarDocuments(String businessId, String userId,
-        List<Float> queryEmbedding,
+    public Uni<List<String>> findSimilarDocuments(String businessId, String userId, List<Float> queryEmbedding,
         int limit) {
         if (!config.isDevMode()) {
             LOG.debug("Not in dev mode, skipping local embedding search");
@@ -230,8 +228,8 @@ public class MongoSyncRepository implements SyncRepository {
 
                 // Create a filter for the business and user
                 Bson filter = Filters.and(
-                    Filters.eq("businessId", businessId),
-                    Filters.eq("userId", userId)
+                    Filters.eq("businessId", businessId)
+                    //Filters.eq("userId", userId)
                 );
 
                 // Fetch all matching documents (in production, you would use a proper vector search)

@@ -7,7 +7,7 @@ import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import io.vertx.mutiny.core.Vertx;
-import jakarta.enterprise.context.ApplicationScoped;
+import io.vertx.mutiny.ext.web.client.WebClient;
 import jakarta.inject.Inject;
 import java.net.URI;
 import java.time.temporal.ChronoUnit;
@@ -18,7 +18,6 @@ import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
-import pro.olli.ai.AiConfiguredService;
 import pro.olli.ai.ChatMessage;
 import pro.olli.ai.EmbeddingService;
 import pro.olli.ai.QueryService;
@@ -43,12 +42,15 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
     private final EmbeddingService embeddingService;
     private final SyncRepository syncRepository;
     private final ChunkingStrategy chunkingStrategy;
+    private final pro.olli.ai.tokenizer.BytePairEncodingTokenizer tokenizer;
 
     @Inject
     public EnhancedRAGOllamaQueryService(AppConfig config,
         Vertx vertx,
         EmbeddingService embeddingService,
-        SyncRepository syncRepository) {
+        SyncRepository syncRepository,
+        pro.olli.ai.tokenizer.BytePairEncodingTokenizer tokenizer) {
+        this.tokenizer = tokenizer;
         this.config = config;
         this.vertx = vertx;
         this.embeddingService = embeddingService;
@@ -125,55 +127,66 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
                     return "";
                 }
 
-                LOG.infof("Found %d similar documents for query", similarDocuments.size());
+                LOG.infof("Found %d similar documents or chunks for query", similarDocuments.size());
 
-                // Format the documents as context
+                // Format the document chunks as context
                 StringBuilder contextBuilder = new StringBuilder();
+                
+                // Standard document formatting - note that the documents are actually text chunks
+                contextBuilder.append("Here is relevant information from your documents:\n\n");
 
-                // Check if any documents contain meeting notes content
-                boolean containsMeetingNotes = false;
+                // Determine if we're getting file paths (MongoDB) or content chunks (MemoryRepo)
+                boolean containsActualContent = false;
+                
+                // Check if we need to fetch content or already have content chunks
+                // Simplistic check: if any string contains newlines or is longer than 100 chars,
+                // it's probably content rather than a filepath
                 for (String doc : similarDocuments) {
-                    if (doc.contains("Meeting Notes") ||
-                        doc.contains("Attendees") ||
-                        doc.contains("Maria Gonzalez") ||
-                        doc.contains("The question is about")) {
-                        containsMeetingNotes = true;
+                    if (doc.contains("\n") || doc.length() > 100) {
+                        containsActualContent = true;
                         break;
                     }
                 }
-
-                // Special formatting for meeting notes
-                if (containsMeetingNotes) {
-                    contextBuilder.append("Meeting Notes Content:\n\n");
-
+                
+                if (containsActualContent) {
+                    // We have actual content chunks, not just file paths
                     for (int i = 0; i < similarDocuments.size(); i++) {
-                        String doc = similarDocuments.get(i);
+                        String chunk = similarDocuments.get(i);
+                        
                         // Remove metadata prefix if present
-                        if (doc.startsWith("IMPORTANT - ")) {
-                            contextBuilder.append(doc).append("\n\n");
-                        } else {
-                            contextBuilder.append(doc).append("\n\n");
+                        if (chunk.startsWith("IMPORTANT - ")) {
+                            chunk = chunk.substring("IMPORTANT - ".length());
                         }
+                        
+                        // Add to context with clear separation
+                        contextBuilder.append("CHUNK ").append(i + 1).append(":\n");
+                        contextBuilder.append(chunk).append("\n\n");
                     }
                 } else {
-                    // Standard document formatting
-                    contextBuilder.append("Based on your documents, here is relevant information:\n\n");
-
+                    // We have file paths - log the issue since we cannot provide actual content
+                    LOG.warn("findSimilarDocuments returned only file paths, not content chunks. RAG will be ineffective.");
+                    contextBuilder.append("WARNING: Only document paths were retrieved, not content. This likely indicates a misconfiguration.\n\n");
+                    
                     for (int i = 0; i < similarDocuments.size(); i++) {
-                        String doc = similarDocuments.get(i);
-                        contextBuilder.append("Document ").append(i + 1).append(": ").append(doc).append("\n\n");
+                        contextBuilder.append("Document ").append(i + 1).append(": ").append(similarDocuments.get(i)).append("\n");
                     }
+                    
+                    contextBuilder.append("\nPlease inform the administrator that the RAG system is returning file paths instead of content chunks.");
                 }
 
                 String context = contextBuilder.toString();
 
                 // Truncate context if it's too long
-                if (BytePairEncodingTokenizer.getTokenCount(context) > config.getOllamaRagMaxContextTokens()) {
+                int contextTokens = tokenizer.estimateTokenCount(context);
+                if (contextTokens > config.getOllamaRagMaxContextTokens()) {
                     LOG.infof("Context too long (%d tokens), truncating",
-                        BytePairEncodingTokenizer.getTokenCount(context));
-                    context = BytePairEncodingTokenizer.truncateText(context, config.getOllamaRagMaxContextTokens());
+                        contextTokens);
+                    context = tokenizer.truncateToTokenLimit(context, config.getOllamaRagMaxContextTokens());
                 }
 
+                LOG.infof("Generated context with %d tokens from %d document chunks", 
+                    tokenizer.estimateTokenCount(context), similarDocuments.size());
+                
                 return context;
             });
     }
@@ -183,7 +196,9 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
      */
     private Uni<String> executeQueryWithContext(String prompt, List<ChatMessage> history, String context) {
         // Use WebClient to make a non-blocking request
-        io.vertx.mutiny.ext.web.client.WebClient webClient = io.vertx.mutiny.ext.web.client.WebClient.create(vertx);
+        WebClient webClient = WebClient.create(vertx);
+
+        LOG.debugf("Executing RAG query \"%s\", %d, %s", prompt, history.size(), context);
 
         // Parse URL
         URI uri;
@@ -214,12 +229,12 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
                 "1. ONLY use information from the context to answer questions.\n" +
                 "2. If the context does not have the information needed to answer a question, say 'I don't have information about that in the provided context.'\n" +
                 "3. Do not use external information or make up facts that are not in the context.\n" +
-                "4. For questions about meeting notes, attendees, dates, budget, timeline, risks, or any other specific details, ONLY use the exact information from the context.\n" +
+                "4. For questions about dates, details, statistics, or any specific information, ONLY use the exact information from the context chunks.\n" +
                 "5. Be concise and direct in your answers.\n" +
-                "6. ALWAYS begin your answer with 'According to the meeting notes' or 'Based on the meeting notes'.\n" +
-                "7. CRITICAL: Pay careful attention to any 'IMPORTANT' markers in the context as they highlight the specific information the question is asking about.\n" +
-                "8. For names, dates, and numbers, be exact and precise - use the specific values from the context.\n" +
-                "9. Different parts of the context have specific information - read all of it thoroughly to find the exact information requested.\n\n";
+                "6. ALWAYS begin your answer with 'Based on the provided documents' or 'According to the documents'.\n" +
+                "7. For names, dates, and numbers, be exact and precise - use the specific values from the context.\n" +
+                "8. Each CHUNK may contain different information - read all chunks thoroughly to find the information relevant to the question.\n" +
+                "9. Cite specific chunks when possible, e.g., 'According to CHUNK 3...'\n\n";
         }
 
         StringBuilder fullPrompt = new StringBuilder(systemPrompt);
