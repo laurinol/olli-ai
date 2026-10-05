@@ -232,7 +232,7 @@ public class SyncWorker {
     @Retry(maxRetries = 3, delay = 500, jitter = 100,
         retryOn = {Exception.class},
         abortOn = {AppException.class})
-    @Fallback(fallbackMethod = "processingFileFallback")
+    @Fallback(fallbackMethod = "processFileFallback")
     protected Uni<Void> processFile(Connector provider, String file, String taskId, String businessId,
         String userId) {
         LOG.infof("Processing sync file %s", file);
@@ -299,7 +299,7 @@ public class SyncWorker {
         };
     }
 
-    protected Uni<Void> processingFileFallback(Connector provider, String file, String taskId,
+    protected Uni<Void> processFileFallback(Connector provider, String file, String taskId,
         String businessId, String userId, Throwable cause) {
         LOG.warnf("Falling back on file processing for %s due to: %s", file, cause.getMessage());
         // Record the failure
@@ -441,7 +441,7 @@ public class SyncWorker {
     protected Uni<String> extractText(InputStream inputStream) {
         return Uni.createFrom().emitter(emitter -> {
             try (inputStream) {
-                // Create a content handler with generous write limit
+                // Create a content handler with a generous write limit
                 ContentHandler handler = new BodyContentHandler(-1); // -1 means no limit
 
                 // Create the metadata object

@@ -1,198 +1,221 @@
-# Olli AI 
+# Olli AI
 
-Welcome to the backend of **Olli AI**, a Quarkus-based application designed to sync and process documents from multiple connectors for small to medium businesses (SMBs). This service supports a $99/month subscription model, targeting businesses with up to 39,000 documents, operating within a $85-$90/month operational cost.
+A multi-tenant backend that turns a business's scattered documents into a
+queryable knowledge base. It syncs files from the storage systems a business
+already uses, indexes them, and answers questions about them conversationally.
 
-## Features
-- **Multi-Provider Sync**: Integrates with Google Drive, Dropbox, OneDrive, S3, SFTP, Samba (Network), and Local filesystem—flexible document ingestion.
-- **Multi-User Support**: Businesses register with a `businessId`—employees have individual logins (`userId`) via Google OAuth—sync history tracked per user.
-- **Scalable RAG Pipeline**: Retrieval-Augmented Generation—processes up to 39,000 documents—optimized embeddings with Vertex AI and Firestore connectors.
-- **Cloud Tasks**: Asynchronous task queuing—robust sync operations—scalable for SMBs.
+Built with Quarkus 3.8.3 on Java 17.
 
-## Tech Stack
-- **Framework**: Quarkus 3.8.3—fast, lightweight, reactive—optimized for cloud-native.
-- **Language**: Java 17—modern, reliable—your backend’s backbone.
-- **Database**: Google Firestore—scalable NoSQL—stores client data, user history—your `$85-$90/month` cost model.
-- **Task Queue**: Google Cloud Tasks—queues sync jobs—your 39,000-doc pipeline.
-- **Config**: MicroProfile Config—`application.properties`—flexible, environment-specific—e.g., `gcp.project-id`.
-- **Dependencies**: Gson, JCIFS-NG (Samba), Google Cloud SDK—your multi-provider setup—integrated seamlessly.
-
-## Prerequisites
-- **Java**: 17+—JDK installed—your dev environment.
-- **Maven**: 3.8+—build tool—your project’s lifeline.
-- **GCP Account**: Project (e.g., `olli-ai`)—Firestore, Cloud Tasks enabled.
-- **Google OAuth**: Client ID/Secret.
-- **Docker**: Optional—for local emulators—your dev setup.
-
-## Setup Instructions
-
-### 1. Clone the Repository
-```bash
-git clone https://github.com/laurinol/olli-ai/olli-ai.git
-cd olli-ai/backend
-```
-
-### 2. Configure Environment
-- **Create `.env`**: In `backend/`—add to `.gitignore`—your secrets—secure:
-  ```
-  GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-  GOOGLE_CLIENT_SECRET=GOCSPX-your-secret
-  TEST_BUSINESS_ID=acme-corp
-  TEST_USER_ID=test-user-123
-  GOOGLE_ACCESS_TOKEN=ya29...  # For Google Drive - from OAuth Playground
-  GOOGLE_TEST_FOLDER_ID=13vQSjN2Aj5lskZP704Zh5DNZvsBnfhYw
-  SAMBA_USERNAME=guest
-  SAMBA_PASSWORD=
-  SAMBA_HOST=192.168.1.100
-  SAMBA_SHARE=public
-  LOCAL_BASE_PATH=/test/test-files
-  FIRESTORE_EMULATOR_HOST=localhost:8081  # Optional - for local dev
-  ```
-- **Update `application.properties`**: In `src/main/resources/`—your `$85-$90/month` config:
-  ```properties
-  gcp.project-id=olli-ai-2025
-  quarkus.oidc.auth-server-url=https://accounts.google.com
-  quarkus.oidc.client-id=${GOOGLE_CLIENT_ID}
-  quarkus.oidc.client-secret=${GOOGLE_CLIENT_SECRET}
-  quarkus.oidc.token.issuer=https://accounts.google.com
-  quarkus.oidc.application-type=web-app
-  quarkus.oidc.redirect-path=/auth/google/callback
-  quarkus.http.auth.permission.authenticated.paths=/auth/sync/*,-/auth/sync/local
-  quarkus.http.auth.permission.authenticated.policy=authenticated
-
-  %dev.quarkus.http.auth.permission.authenticated.paths=
-  %dev.quarkus.oidc.enabled=false
-  ```
-
-### 3. Install Dependencies
-```bash
-mvn clean install
-```
-
-### 4. Run Locally
-- **Dev Mode**: Loads `.env`—your `$85-$90/month` pipeline—local testing:
-  ```bash
-  sh test/setup-local.sh  # Source .env and start
-  # OR
-  mvn quarkus:dev
-  ```
-- **Emulator**: Optional—Firestore, Cloud Tasks—your dev setup:
-  ```bash
-  docker-compose -f test/docker-compose.yml up -d
-  ```
-
-### 5. Deploy to Production
-- **Build**: Your `$99/month` app—prod-ready:
-  ```bash
-  mvn package -Pprod
-  ```
-- **Deploy**: Google App Engine—your `$85-$90/month` infra:
-  ```bash
-  gcloud app deploy backend/app.yaml
-  ```
-
-## Usage
-
-### Register a Client
-- **Endpoint**: `/auth/google/login?businessId=acme-corp`—admin registers business—employees join—your multi-user SMBs:
-    - Redirects to Google OAuth—callback at `/auth/google/callback`—adds to Firestore (`clients/acme-corp/users/<sub>`).
-
-### Sync Documents
-- **Endpoint**: `/auth/sync/{source}?folderId=<folder>&businessId=<businessId>`—your 39,000-doc pipeline:
-    - Local: `curl -v http://localhost:8080/auth/sync/local?folderId=testfolder&businessId=acme-corp`—no auth in dev—200 response.
-    - Google: `curl -H "Authorization: Bearer <id-token>" -v http://localhost:8080/auth/sync/google?folderId=13vQSjN2...&businessId=acme-corp`—200 with ID token.
-
-### Example Response
-```json
-{
-  "taskId": "550e8400-e29b-41d4-a716-446655440000",
-  "message": "Sync queued"
-}
-```
-
-## Architecture
-- **SyncResource**: REST endpoint—handles sync requests—passes `businessId`, `userId`—your `$99/month` app’s entry—scalable.
-- **SyncService**: Queues tasks—Cloud Tasks—updates Firestore history—your `$85-$90/month` pipeline—reactive—tracks per employee—39,000-doc capacity.
-- **SyncWorker**: Processes tasks—fetches user creds—syncs files—your multi-provider core—robust—efficient.
-- **Connectors**: Google Drive, Local, etc.—interface-driven—your app—flexible—extends easily—Samba, SFTP—your SMBs—covered.
-- **Firestore**: `clients/<businessId>/users/<userId>`—stores data, history—your `$85-$90/month` cost—optimized—scalable.
-
-## Monitoring and Metrics
-
-Olli AI includes comprehensive monitoring and metrics to ensure system health and identify performance bottlenecks:
-
-### Available Metrics
-- **API Performance**: Track request duration, response codes, and throughput—identify slow endpoints.
-- **Database Operations**: Monitor Firestore read/write times, error rates—optimize queries.
-- **Connector Operations**: Track file sync times across providers—Google Drive, S3, SFTP, etc.
-- **AI Service Performance**: Monitor embedding generation time—detect Vertex AI slowdowns.
-- **Circuit Breaker States**: Track when services degrade—automatic fault detection.
-- **Sync Task Processing**: Monitor files processed, processing rates, and timing—track your 39,000-doc pipeline.
-
-### Monitoring Endpoints
-- **Health Checks**: `/health/live` and `/health/ready`—Kubernetes-compatible health status.
-- **Prometheus Metrics**: `/q/metrics`—standard Prometheus endpoint—all metrics exposed.
-- **Health UI**: `/health-ui`—visual dashboard of system health—dev environment.
-
-### Setting Up Alerts
-1. **Prometheus Configuration**: 
-   ```yaml
-   scrape_configs:
-     - job_name: 'olli-backend'
-       metrics_path: '/q/metrics'
-       static_configs:
-         - targets: ['olli-backend:8080']
-   ```
-
-2. **Sample Alert Rules**:
-   ```yaml
-   groups:
-   - name: olli-alerts
-     rules:
-     - alert: ApiHighLatency
-       expr: api_request_duration_seconds{endpoint="/auth/sync/{source}"} > 2
-       for: 5m
-       labels:
-         severity: warning
-       annotations:
-         summary: "API high latency detected"
-         description: "Endpoint {{ $labels.endpoint }} is experiencing high latency ({{ $value }}s)"
-
-     - alert: CircuitBreakerOpen
-       expr: circuit_breaker_open > 0
-       for: 1m
-       labels:
-         severity: critical
-       annotations:
-         summary: "Circuit breaker open"
-         description: "Circuit breaker {{ $labels.name }} is in OPEN state"
-   ```
-
-3. **Integration Options**:
-   - **GCP**: Export to Cloud Monitoring—use built-in Prometheus integration.
-   - **AWS**: CloudWatch integration—send metrics directly or via Prometheus.
-   - **Azure**: Azure Monitor integration—compatible with Prometheus metrics.
-   - **On-Prem**: Prometheus + Grafana—standard monitoring stack—vendor-agnostic.
-
-### Using the @Timed Annotation
-Add performance metrics to your methods with the `@Timed` annotation:
-
-```java
-@Timed(type = OperationType.DATABASE)
-public Uni<Optional<User>> getUser(String email) {
-    // Method implementation
-}
-```
-
-## Contributing
-- **Issues**: Report bugs—suggest features—your feedback—shapes your `$99/month` app—GitHub Issues.
-- **PRs**: Fork, branch, PR—your code—enhances your `$85-$90/month` pipeline—welcome—your 39,000-doc setup—grows.
-
-## License
-Copyright 2025 Olli Solutions LLC. All rights reserved.
+> **Status: proof of concept.** This was built to work through the design of a
+> multi-tenant RAG service end to end — connector abstraction, embedding
+> strategy, retrieval quality, and the operational concerns around them. It is
+> not deployed and has no production users. See [Known gaps](#known-gaps).
 
 ---
 
-### Notes
-- **Customization**: Replace `your-org`—your GitHub org—update project IDs, URLs—your `$85-$90/month` infra—specific—your `$99/month` app—branded—your 39,000-doc pipeline—yours.
-- **Secrets**: `.env`—not committed—your security—tight—your SMBs—protected—your `$85-$90/month` cost—safe—your `$99/month` app—trusted.
-- **Next Steps**: Add CI/CD (GitHub Actions)—your `$85-$90/month` pipeline—automated—your `$99/month` app—deployed—your 39,000-doc setup—streamlined—want that?
+## What it does
+
+1. A business registers and its employees sign in with Google.
+2. The business connects one or more storage sources: Google Drive, Dropbox,
+   S3, SFTP, a Samba/network share, or a local directory.
+3. Documents are pulled on demand, chunked, and embedded.
+4. Users ask questions in natural language and get answers grounded in the
+   retrieved content.
+
+## Architecture
+
+The core design decision is that every external dependency sits behind an
+interface with interchangeable implementations. Connectors, repositories, task
+queues, and AI providers are all selected by configuration rather than
+hardcoded, so a deployment can run entirely against local emulators or against
+Google Cloud without changing application code.
+
+```
+SyncResource ─┐
+              ├─► SyncService ─► ConnectorFactory ─► Drive │ Dropbox │ S3 │ SFTP │ Samba │ Local
+ChatResource ─┘         │
+                        ├─► TaskQueueFactory ──► Cloud Tasks │ RabbitMQ
+                        │
+                        └─► SyncWorker ─► EmbeddingService ─► Vertex AI │ Ollama │ ONNX
+                                               │
+                                               └─► Repository ─► Firestore │ MongoDB │ in-memory
+```
+
+| Concern | Abstraction | Implementations |
+|---|---|---|
+| Document sources | `Connector` / `ConnectorFactory` | Google Drive, Dropbox, S3, SFTP, Samba, local |
+| Persistence | `*Repository` / `RepositoryProducer` | Firestore, MongoDB, in-memory |
+| Async work | `TaskQueueService` / `TaskQueueFactory` | Google Cloud Tasks, RabbitMQ |
+| AI providers | `AiProducer` / `AiImplementationType` | Vertex AI, Ollama, ONNX |
+
+### Multi-tenancy
+
+Every record is scoped to a `businessId`, and users are individual `userId`s
+within a business. Sync history and connector credentials are tracked per user,
+not per business, so one employee's Google Drive connection is not visible to
+another.
+
+### Billing and team management
+
+Subscription state and payment events go through a `PaymentProvider` interface
+with a Stripe implementation, including webhook handling for subscription
+lifecycle events. Team invitations and email verification are handled in
+`InvitationController` and `auth/`.
+
+## AI and retrieval design
+
+This is where most of the work went.
+
+**Embedding is pluggable, including a fully local option.** `EmbeddingService`
+has three implementations: Vertex AI (hosted), Ollama (local server), and ONNX
+(in-process). The ONNX path runs a quantised `qint8` model directly inside the
+JVM, which means embeddings cost nothing per document and need no network call.
+
+**Tokenisation is implemented rather than delegated.** `BytePairEncodingTokenizer`
+loads `tokenizer.json` and produces token boundaries directly, which is what
+makes chunking respect real token limits instead of approximating with character
+counts.
+
+**Four retrieval strategies coexist**, so their output quality can be compared
+on the same corpus rather than argued about:
+
+| Strategy | Approach |
+|---|---|
+| `DirectOllamaQueryService` | No retrieval — direct prompt, for baseline comparison |
+| `SimpleRAGOllamaQueryService` | Naive top-k retrieval |
+| `RAGOllamaQueryService` | Chunked retrieval with context assembly |
+| `EnhancedRAGOllamaQueryService` | Retrieval plus query refinement |
+
+Keeping the naive versions alongside the improved ones was deliberate: without a
+baseline on the same data, "this retrieval approach is better" is a guess.
+
+## Tech stack
+
+- **Framework:** Quarkus 3.8.3, RESTEasy Reactive, Mutiny
+- **Language:** Java 17
+- **AI:** Vertex AI, Ollama, ONNX Runtime
+- **Storage:** Firestore, MongoDB, in-memory
+- **Async:** Google Cloud Tasks, RabbitMQ
+- **Auth:** OIDC via Google
+- **Payments:** Stripe
+- **Observability:** structured logging, tracing, performance and circuit-breaker
+  metrics, health checks
+
+## Getting started
+
+**Prerequisites:** JDK 17+, Maven 3.8+, Docker (for emulators). A GCP project is
+only needed if you want the Vertex AI path.
+
+```bash
+git clone https://github.com/laurinol/olli-ai.git
+cd olli-ai
+```
+
+Create `.env` from the provided template and fill in your values:
+
+```bash
+cp sample.env .env
+```
+
+Run the local emulators (Firestore, MongoDB, and others):
+
+```bash
+docker-compose -f test/docker-compose.yml up -d
+```
+
+Start in dev mode:
+
+```bash
+mvn quarkus:dev
+```
+
+Dev mode disables OIDC so you can exercise the API without a Google round trip,
+and the emulator-backed repositories mean **no cloud account is required to run
+the application locally**.
+
+## Configuration
+
+Key settings in `src/main/resources/application.properties`:
+
+| Property | Purpose |
+|---|---|
+| `gcp.project-id` | GCP project for Firestore, Cloud Tasks and Vertex AI |
+| `quarkus.oidc.auth-server-url` | `https://accounts.google.com` |
+| `quarkus.oidc.application-type` | `web-app` |
+| `quarkus.oidc.redirect-path` | OAuth callback path |
+| `quarkus.http.auth.permission.*` | Which endpoints require authentication |
+
+Secrets belong in `.env`, which is gitignored. `sample.env` documents every
+variable the application reads.
+
+## Testing
+
+```bash
+mvn test                                    # all tests
+mvn test -Dtest=SyncResourceTest            # a single class
+mvn test -Dtest=SyncResourceTest#testSyncFolderLocalNoAuthSuccess
+```
+
+The suite covers connectors (`LocalConnectorTest`, `NetworkConnectorTest`,
+`SftpConnectorTest`), services (`SyncServiceTest`), the REST layer
+(`SyncResourceTest`), Stripe webhook handling, and end-to-end flows with
+dedicated test profiles so integration tests run without cloud credentials.
+
+There is also a Postman collection (`test/olli-ai.postman_collection.json`) and
+an OpenAPI spec (`test/openapi.yml`) for exercising the API directly.
+
+## Project layout
+
+```
+src/main/java/pro/olli/
+  ai/          embedding and query services, tokenizer, RAG strategies
+  auth/        OIDC and JWT handling
+  connector/   document sources behind one interface
+  core/        logging, metrics, tracing, resilience
+  models/      domain types
+  queue/       task queue abstraction
+  repository/  persistence abstraction and implementations
+  rest/        HTTP resources
+  service/     sync orchestration, billing, payment providers
+  worker/      asynchronous sync execution
+docs/          Stripe, email verification, invitations, architecture diagrams
+docs/internal/ working notes from the build process
+test/          emulator config, test scripts, Postman collection, OpenAPI spec
+k8s/           deployment manifest
+```
+
+## Design decisions worth calling out
+
+**Local-first development.** Being able to run the whole system with no cloud
+account shortened the feedback loop more than any other decision. The emulator
+and in-memory implementations exist to make that possible.
+
+**Strategy objects over configuration flags.** Adding a retrieval approach means
+adding a class, not threading another `if` through the query path.
+
+**Quantised in-process embeddings.** Committing to a bundled ONNX model trades a
+little accuracy for zero per-document cost and no network dependency, which is
+the right trade for a service whose whole premise is indexing a lot of
+documents.
+
+**Repository-per-store rather than an ORM.** Firestore and MongoDB have
+different query models; forcing them through a common ORM would have leaked
+abstractions rather than hidden them.
+
+## Known gaps
+
+Stated plainly, because they define where this would go next:
+
+- **OneDrive ingestion is not implemented.** The class exists in the tree but is
+  disabled pending an API review.
+- **No production deployment.** The CI workflow's deploy jobs reference
+  `app.yaml` manifests that were never written, and they require GCP credentials
+  that only exist in a private environment.
+- **Retrieval quality is not measured.** The four strategies exist to make
+  comparison possible; the eval harness comparing them does not.
+- **Single-region assumptions.** Tenant data isolation is enforced in code, not
+  by any infrastructure boundary.
+
+## License
+
+All rights reserved. This is a demonstration project, not open-source software.

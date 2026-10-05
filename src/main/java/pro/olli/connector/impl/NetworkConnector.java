@@ -68,9 +68,11 @@ public class NetworkConnector implements Connector {
     public Uni<List<String>> listFiles(String directory) {
         return Uni.createFrom().emitter(emitter -> {
             try {
-                String path = basePath + (directory != null ? directory + "/" : "");
-                SmbFile dir = new SmbFile(path, context);
-                SmbFile[] smbFiles = dir.listFiles();
+                String relativePath = basePath + (directory != null ? directory + "/" : "");
+                SmbFile[] smbFiles;
+                try (SmbFile dir = createSmbFile(relativePath)) {
+                    smbFiles = dir.listFiles();
+                }
                 List<String> files = Arrays.stream(smbFiles)
                     .filter(file -> {
                         try {
@@ -91,6 +93,18 @@ public class NetworkConnector implements Connector {
                 emitter.fail(e);
             }
         });
+    }
+
+    /**
+     * Creates an SmbFile using the provided relative path appended to the base path.
+     *
+     * @param relativePath The relative path to append to the base path
+     * @return The created SmbFile
+     * @throws MalformedURLException If the combined path forms an invalid URL
+     */
+    private SmbFile createSmbFile(String relativePath) throws MalformedURLException {
+        String fullPath = basePath + relativePath;
+        return new SmbFile(fullPath, context);
     }
 
     @Override

@@ -38,7 +38,7 @@ public class RAGOllamaQueryService implements QueryService {
     private final Vertx vertx;
     private final EmbeddingService embeddingService;
     private final SyncRepository syncRepository;
-    
+
     // This class is a RAG implementation with vector embedding retrieval
 
     @Inject
@@ -80,7 +80,7 @@ public class RAGOllamaQueryService implements QueryService {
                 new AppException("Empty prompt provided for query",
                     AppException.ErrorType.VALIDATION_ERROR));
         }
-        
+
         // Enable system property for debugging RAG
         boolean debugRag = Boolean.getBoolean("debug.rag");
         if (debugRag) {
@@ -93,23 +93,23 @@ public class RAGOllamaQueryService implements QueryService {
         String businessId = System.getProperty("ollama.rag.business_id", "test-business");
 
         LOG.infof("RAG query using businessId=%s, userId=%s for prompt: %s", businessId, userId, prompt);
-        
-        // Set current query for the MemorySyncRepository to use for prioritization
+
+        // Set the current query for the MemorySyncRepository to use for prioritization
         System.setProperty("current.query", prompt);
 
-        // First create an embedding for the query
+        // First, create an embedding for the query
         LOG.info("Generating embedding for query: " + prompt);
         return embeddingService.generateEmbedding(prompt)
             .flatMap(queryEmbedding -> {
                 // Log the embedding dimensions
                 LOG.infof("Generated query embedding with %d dimensions", queryEmbedding.size());
-                
+
                 // Search for relevant documents
                 LOG.infof("Searching for documents for business=%s, user=%s", businessId, userId);
                 return syncRepository.findSimilarDocuments(businessId, userId, queryEmbedding, MAX_DOCUMENT_RESULTS)
                     .flatMap(relevantDocuments -> {
                         LOG.infof("Found %d relevant documents for query", relevantDocuments.size());
-                        
+
                         // Log the content of each document found
                         for (int i = 0; i < relevantDocuments.size(); i++) {
                             LOG.infof("Document %d content: %s", i, relevantDocuments.get(i));
@@ -125,16 +125,16 @@ public class RAGOllamaQueryService implements QueryService {
                                 relevantDocuments.stream()
                                     .map(doc -> "- " + doc)
                                     .collect(Collectors.joining("\n"));
-                            
+
                             LOG.info("Built context from relevant documents: " + context);
-                            
+
                             // Special handling for meeting-specific queries to enhance prompt
                             String enhancedPrompt = prompt;
-                            if (Boolean.getBoolean("enhance.prompt") && 
-                                (prompt.toLowerCase().contains("meeting") || 
-                                 prompt.toLowerCase().contains("attendees") || 
-                                 prompt.toLowerCase().contains("who") || 
-                                 prompt.toLowerCase().contains("budget") || 
+                            if (Boolean.getBoolean("enhance.prompt") &&
+                                (prompt.toLowerCase().contains("meeting") ||
+                                 prompt.toLowerCase().contains("attendees") ||
+                                 prompt.toLowerCase().contains("who") ||
+                                 prompt.toLowerCase().contains("budget") ||
                                  prompt.toLowerCase().contains("timeline"))) {
                                 LOG.info("Enhanced prompt mode enabled for meeting-related query");
                                 enhancedPrompt = "Based ONLY on the meeting notes, " + prompt;
@@ -146,7 +146,7 @@ public class RAGOllamaQueryService implements QueryService {
                     });
             });
     }
-    
+
 
     /**
      * Execute a direct query to Ollama API with optional context from relevant documents
@@ -212,13 +212,12 @@ public class RAGOllamaQueryService implements QueryService {
         if (history != null && !history.isEmpty()) {
             for (ChatMessage msg : history) {
                 String role = msg.role.trim().toLowerCase();
-                if ("user".equals(role)) {
-                    fullPrompt.append("\n\nUser: ").append(msg.content);
-                } else if ("assistant".equals(role)) {
-                    fullPrompt.append("\n\nAssistant: ").append(msg.content);
-                } else if ("system".equals(role)) {
-                    // System messages come first
-                    fullPrompt.insert(0, msg.content + "\n\n");
+                switch (role) {
+                    case "user" -> fullPrompt.append("\n\nUser: ").append(msg.content);
+                    case "assistant" -> fullPrompt.append("\n\nAssistant: ").append(msg.content);
+                    case "system" ->
+                        // System messages come first
+                        fullPrompt.insert(0, msg.content + "\n\n");
                 }
             }
         }

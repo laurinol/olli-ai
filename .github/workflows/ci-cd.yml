@@ -3,12 +3,12 @@ name: CI-CD Pipeline
 on:
   push:
     branches:
-      - main
+      - master
     tags:
       - 'v*.*.*'
   pull_request:
     branches:
-      - main
+      - master
 
 jobs:
   build-and-test:
@@ -24,7 +24,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Cache Maven Dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
@@ -35,14 +35,14 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: target/surefire-reports/*.xml
 
   deploy-staging:
     needs: build-and-test
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code

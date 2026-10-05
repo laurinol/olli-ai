@@ -49,7 +49,7 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
         Vertx vertx,
         EmbeddingService embeddingService,
         SyncRepository syncRepository,
-        pro.olli.ai.tokenizer.BytePairEncodingTokenizer tokenizer) {
+        BytePairEncodingTokenizer tokenizer) {
         this.tokenizer = tokenizer;
         this.config = config;
         this.vertx = vertx;
@@ -131,13 +131,13 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
 
                 // Format the document chunks as context
                 StringBuilder contextBuilder = new StringBuilder();
-                
+
                 // Standard document formatting - note that the documents are actually text chunks
                 contextBuilder.append("Here is relevant information from your documents:\n\n");
 
                 // Determine if we're getting file paths (MongoDB) or content chunks (MemoryRepo)
                 boolean containsActualContent = false;
-                
+
                 // Check if we need to fetch content or already have content chunks
                 // Simplistic check: if any string contains newlines or is longer than 100 chars,
                 // it's probably content rather than a filepath
@@ -147,17 +147,17 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
                         break;
                     }
                 }
-                
+
                 if (containsActualContent) {
                     // We have actual content chunks, not just file paths
                     for (int i = 0; i < similarDocuments.size(); i++) {
                         String chunk = similarDocuments.get(i);
-                        
+
                         // Remove metadata prefix if present
                         if (chunk.startsWith("IMPORTANT - ")) {
                             chunk = chunk.substring("IMPORTANT - ".length());
                         }
-                        
+
                         // Add to context with clear separation
                         contextBuilder.append("CHUNK ").append(i + 1).append(":\n");
                         contextBuilder.append(chunk).append("\n\n");
@@ -166,11 +166,11 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
                     // We have file paths - log the issue since we cannot provide actual content
                     LOG.warn("findSimilarDocuments returned only file paths, not content chunks. RAG will be ineffective.");
                     contextBuilder.append("WARNING: Only document paths were retrieved, not content. This likely indicates a misconfiguration.\n\n");
-                    
+
                     for (int i = 0; i < similarDocuments.size(); i++) {
                         contextBuilder.append("Document ").append(i + 1).append(": ").append(similarDocuments.get(i)).append("\n");
                     }
-                    
+
                     contextBuilder.append("\nPlease inform the administrator that the RAG system is returning file paths instead of content chunks.");
                 }
 
@@ -184,9 +184,9 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
                     context = tokenizer.truncateToTokenLimit(context, config.getOllamaRagMaxContextTokens());
                 }
 
-                LOG.infof("Generated context with %d tokens from %d document chunks", 
+                LOG.infof("Generated context with %d tokens from %d document chunks",
                     tokenizer.estimateTokenCount(context), similarDocuments.size());
-                
+
                 return context;
             });
     }
@@ -243,13 +243,12 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
         if (history != null && !history.isEmpty()) {
             for (ChatMessage msg : history) {
                 String role = msg.role.trim().toLowerCase();
-                if ("user".equals(role)) {
-                    fullPrompt.append("\n\nUser: ").append(msg.content);
-                } else if ("assistant".equals(role)) {
-                    fullPrompt.append("\n\nAssistant: ").append(msg.content);
-                } else if ("system".equals(role)) {
-                    // System messages come first
-                    fullPrompt.insert(0, msg.content + "\n\n");
+                switch (role) {
+                    case "user" -> fullPrompt.append("\n\nUser: ").append(msg.content);
+                    case "assistant" -> fullPrompt.append("\n\nAssistant: ").append(msg.content);
+                    case "system" ->
+                        // System messages come first
+                        fullPrompt.insert(0, msg.content + "\n\n");
                 }
             }
         }
@@ -266,7 +265,7 @@ public class EnhancedRAGOllamaQueryService implements QueryService {
 
         LOG.infof("Sending Enhanced RAG query with total prompt length: %d", fullPrompt.length());
 
-        if (!context.isEmpty()) {
+        if (context != null && !context.isEmpty()) {
             LOG.infof("RAG context length: %d characters, ~%d tokens",
                 context.length(), BytePairEncodingTokenizer.getTokenCount(context));
         }

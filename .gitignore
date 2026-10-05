@@ -4,10 +4,7 @@ target/
 !**/src/test/**/target/
 
 ### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
+.idea/
 *.iws
 *.iml
 *.ipr
@@ -44,3 +41,5 @@ build/
 /test/minio-data/
 /test/mongodb-data/
 /test/ollama/
+
+**/CLAUDE.local.md
