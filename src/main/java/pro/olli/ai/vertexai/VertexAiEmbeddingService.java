@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Olli Solutions LLC. All rights reserved.
+ * Copyright (c) 2025 Kai Laurinolli. All rights reserved.
  */
 
 package pro.olli.ai.vertexai;

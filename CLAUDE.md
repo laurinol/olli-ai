@@ -10,7 +10,7 @@
 - Build for production: `mvn package -Pprod`
 
 ## Code Style
-- Copyright header on all files: `Copyright (c) 2025 Olli Solutions LLC. All rights reserved.`
+- Copyright header on all files: `Copyright (c) 2025 Kai Laurinolli. All rights reserved.`
 - Package structure: `pro.olli.<module>`, modules: ai, auth, core, models, repository, rest, service
 - Imports ordering: Jakarta/Java imports first, third-party libs next, project imports last
 - Naming: PascalCase for classes, camelCase for methods/variables, UPPER_SNAKE_CASE for constants
