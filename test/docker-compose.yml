@@ -68,7 +68,7 @@ services:
   #  restart: always
 
   minio:
-    image: minio/minio
+    image: cgr.dev/chainguard/minio:latest
     container_name: s3-store
     command: server /data --console-address ":9001"
     ports:
